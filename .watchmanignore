@@ -1,0 +1,5 @@
+# Watchman ignore list
+node_modules
+.git
+.hg
+*.log

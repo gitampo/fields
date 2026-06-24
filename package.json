@@ -1,0 +1,19 @@
+{
+  "name": "fields-monorepo",
+  "version": "1.0.0",
+  "description": "App monorepo per prenotazione campi sportivi (mobile + backend)",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "mobile"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=backend & npm start --workspace=mobile",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:mobile": "npm start --workspace=mobile",
+    "build": "npm run build --workspace=backend && npm run build --workspace=mobile",
+    "test": "npm test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "format": "npm run format --workspaces"
+  }
+}

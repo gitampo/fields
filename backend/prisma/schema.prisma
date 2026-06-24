@@ -1,0 +1,150 @@
+// Prisma schema riscritto per apprendimento
+// Spiegherò le parti essenziali: generator, datasource, tipi e modelli.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  points    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  partys              Party[]
+  partymembers        PartyMember[]
+  bookings            Booking[]
+  bookingParticipants BookingParticipant[]
+  Userbadges          UserBadge[]
+  pointsLog           PointsLog[]
+  notifications       Notification[]
+  badges              Badge[]
+}
+
+
+model Field {
+  id          String   @id @default(cuid())
+  name        String
+  sport       String
+  capacity    Int
+  pricePerHour Float   @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isAvailable Boolean  @default(true)
+
+  bookings    Booking[]
+}
+
+
+model Booking {
+  id        String   @id @default(cuid())
+  fieldId   String
+  ownerId   String
+  startTime DateTime
+  endTime   DateTime
+  status    String   @default("confirmed")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  field        Field                @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  owner        User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  participants BookingParticipant[]
+  party        Party?
+}
+
+model BookingParticipant {
+  id        String   @id @default(cuid())
+  bookingId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, userId])
+}
+
+model Party {
+  id         String   @id @default(cuid())
+  ownerId    String
+  bookingId  String?  @unique
+  title      String
+  startTime  DateTime
+  endTime    DateTime
+  isPublic   Boolean  @default(true)
+  maxPlayers Int      @default(10)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  owner   User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  booking Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  members PartyMember[]
+}
+
+model PartyMember {
+  id          String   @id @default(cuid())
+  partyId     String
+  userId      String? // nullable per guest
+  displayName String?
+  isGuest     Boolean  @default(false)
+  joinedAt    DateTime @default(now())
+
+  party Party @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([partyId, userId])
+}
+
+
+model Badge{
+  id     String  @id @default(cuid())
+  name   String 
+  points Int     @default(0)
+  createdAt DateTime @default (now())
+  updatedAt DateTime @updatedAt
+
+  users User  @relation(fields: [id], references: [id], onDelete: Cascade)
+  userBadges UserBadge[]
+
+
+}
+
+model UserBadge {
+  id      String  @id @default(cuid())
+  userId  String
+  badgeId String
+  awardedAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge   Badge   @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+}
+
+model PointsLog {
+  id        String   @id @default(cuid())
+  userId    String
+  points     Int
+  reason     String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+

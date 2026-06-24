@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "FieldsApp",
+    "slug": "fields-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTabletMode": true,
+      "bundleIdentifier": "com.fields.app"
+    },
+    "android": {
+      "package": "com.fields.app"
+    },
+    "web": {},
+    "plugins": [
+      "expo-notifications"
+    ]
+  }
+}
