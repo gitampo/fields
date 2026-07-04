@@ -6,11 +6,22 @@ type RegisterUserInput = {
 	email: string;
 	password: string;
 	name: string;
+	username: string;
 };
 
 type LoginUserInput = {
 	email: string;
 	password: string;
+	username: string;
+};
+
+export type UserProfile = {
+	id: string;
+	name: string;
+	email: string;
+	username: string;
+	points: number;
+	createdAt: Date;
 };
 
 export class AuthServiceError extends Error {
@@ -35,6 +46,7 @@ const signToken = (userId: string) => jwt.sign({ userId }, getJwtSecret(), { exp
 
 export const registerUser = async (input: RegisterUserInput) => {
 	const email = input.email.trim().toLowerCase();
+	const username = input.username.trim().toLowerCase();
 	const name = input.name.trim();
 
 	const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -48,6 +60,7 @@ export const registerUser = async (input: RegisterUserInput) => {
 			email,
 			password: hashedPassword,
 			name,
+			username,
 		},
 	});
 
@@ -56,8 +69,16 @@ export const registerUser = async (input: RegisterUserInput) => {
 
 export const loginUser = async (input: LoginUserInput) => {
 	const email = input.email.trim().toLowerCase();
+	const username = input.username.trim().toLowerCase();
 
-	const user = await prisma.user.findUnique({ where: { email } });
+	const user = await prisma.user.findFirst({
+		where: {
+			OR: [
+				{ email },
+				{ username }
+			]
+		}
+	});
 	if (!user) {
 		throw new AuthServiceError('Invalid email or password', 401);
 	}
@@ -68,4 +89,23 @@ export const loginUser = async (input: LoginUserInput) => {
 	}
 
 	return { token: signToken(user.id) };
+};
+
+export const getUserProfile = async (userId: string): Promise<UserProfile | null> => {
+	return prisma.user.findUnique({
+		where: { id: userId },
+		select: {
+			id: true,
+			name: true,
+			email: true,
+			username: true,
+			points: true,
+			createdAt: true,
+		},
+	});
+};
+
+export const deleteUserAccount = async (userId: string): Promise<boolean> => {
+	const deleted = await prisma.user.deleteMany({ where: { id: userId } });
+	return deleted.count > 0;
 };

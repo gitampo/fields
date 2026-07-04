@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  SafeAreaView,
+  Alert,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -9,32 +11,78 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { useAuthContext } from '../context/AuthContext';
 import { useBookings } from '../hooks/useBookings';
 import { sharedStyles } from '../lib/styles';
 import { FieldsStackParamList } from '../navigation/MainTabs';
+import BackButton from '../components/backButton';
+import Screen from '../components/Screen';
 
 type BookingRouteProp = RouteProp<FieldsStackParamList, 'Booking'>;
 
 export default function BookingScreen() {
   const { token } = useAuthContext();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const route = useRoute<BookingRouteProp>();
-  const { fieldId, fieldName } = route.params;
-  const [pickerTarget, setPickerTarget] = useState<'start' | 'end' | null>(null);
-  const [startAt, setStartAt] = useState(() => {
+  const { fieldId, fieldName, fieldSport } = route.params;
+  const [pickerTarget, setPickerTarget] = useState<'date' | 'startTime' | null>(null);
+  const [isSuccessModalVisible, setSuccessModalVisible] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => {
     const next = new Date();
-    next.setMinutes(0, 0, 0);
-    next.setHours(next.getHours() + 1);
+    next.setHours(0, 0, 0, 0);
     return next;
   });
-  const [endAt, setEndAt] = useState(() => {
+  const [startTime, setStartTime] = useState(() => {
     const next = new Date();
     next.setMinutes(0, 0, 0);
-    next.setHours(next.getHours() + 2);
+    if (new Date() >= next) {
+      next.setHours(next.getHours() + 1);
+    }
     return next;
   });
+
+  const sportContext = useMemo(
+    () => `${fieldSport || ''} ${fieldName || ''}`.toLowerCase(),
+    [fieldName, fieldSport],
+  );
+  const isPadel = useMemo(() => sportContext.includes('padel'), [sportContext]);
+  const bookingDurationMinutes = isPadel ? 90 : 60;
+
+  const normalizeStartTimeBySport = (source: Date, isPadelSport: boolean) => {
+    const next = new Date(source);
+    next.setSeconds(0, 0);
+
+    if (isPadelSport) {
+      const mins = next.getMinutes();
+      if (mins <= 29) {
+        next.setMinutes(0, 0, 0);
+      } else {
+        next.setMinutes(30, 0, 0);
+      }
+      return next;
+    }
+
+    next.setMinutes(0, 0, 0);
+    return next;
+  };
+
+  useEffect(() => {
+    setStartTime((prev) => normalizeStartTimeBySport(prev, isPadel));
+  }, [isPadel]);
+
+
+  const startAt = useMemo(() => {
+    const next = new Date(selectedDate);
+    next.setHours(startTime.getHours(), startTime.getMinutes(), 0, 0);
+    return next;
+  }, [selectedDate, startTime]);
+
+  const endAt = useMemo(() => {
+    const next = new Date(startAt);
+    next.setMinutes(next.getMinutes() + bookingDurationMinutes);
+    return next;
+  }, [bookingDurationMinutes, startAt]);
 
   const {
     setSelectedFieldId,
@@ -45,8 +93,18 @@ export default function BookingScreen() {
     loading,
     bookingError,
     bookingSuccess,
+    availabilityLoading,
+    availabilityError,
+    availableSlots,
     handleCreateBooking,
+    handleFindAvailableSlots,
   } = useBookings(token);
+
+  useEffect(() => {
+    if (bookingSuccess) {
+      setSuccessModalVisible(true);
+    }
+  }, [bookingSuccess]);
 
   useEffect(() => {
     setSelectedFieldId(fieldId);
@@ -54,20 +112,37 @@ export default function BookingScreen() {
 
   useEffect(() => {
     setBookingStart(startAt.toISOString());
-  }, [startAt]);
+  }, [setBookingStart, startAt]);
 
   useEffect(() => {
     setBookingEnd(endAt.toISOString());
-  }, [endAt]);
+  }, [endAt, setBookingEnd]);
 
-  const startLabel = useMemo(
-    () => startAt.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
-    [startAt],
-  );
+  const dateLabel = useMemo(() => (
+    selectedDate.toLocaleDateString('it-IT', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
+  ), [selectedDate]);
+  const startLabel = useMemo(() => (
+    startAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+  ), [startAt]);
   const endLabel = useMemo(
-    () => endAt.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    () => endAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
     [endAt],
   );
+
+  const visibleBookingError = useMemo(() => {
+    if (isPadel && bookingError) {
+      const lowered = bookingError.toLowerCase();
+      if (
+        lowered.includes('ore piene')
+        || lowered.includes('1 ora')
+        || lowered.includes('60 min')
+      ) {
+        return 'Per il padel usa slot da 30 minuti (es. 09:00-10:30).';
+      }
+    }
+
+    return bookingError;
+  }, [bookingError, isPadel]);
 
   const handlePickerChange = (event: DateTimePickerEvent, selected?: Date) => {
     if (event.type === 'dismissed') {
@@ -78,86 +153,221 @@ export default function BookingScreen() {
       return;
     }
 
-    if (pickerTarget === 'start') {
-      setStartAt(selected);
-      if (selected >= endAt) {
-        const nextEnd = new Date(selected);
-        nextEnd.setHours(nextEnd.getHours() + 1);
-        setEndAt(nextEnd);
-      }
+    if (pickerTarget === 'date') {
+      const nextDate = new Date(selected);
+      nextDate.setHours(0, 0, 0, 0);
+      setSelectedDate(nextDate);
     } else {
-      setEndAt(selected);
+      const nextTime = normalizeStartTimeBySport(selected, isPadel);
+
+      const now = new Date();
+      const selectedDayStart = new Date(selectedDate);
+      selectedDayStart.setHours(0, 0, 0, 0);
+      const nowDayStart = new Date(now);
+      nowDayStart.setHours(0, 0, 0, 0);
+
+      if (selectedDayStart.getTime() === nowDayStart.getTime()) {
+        const candidate = new Date(selectedDate);
+        candidate.setHours(nextTime.getHours(), nextTime.getMinutes(), 0, 0);
+
+        if (candidate <= now) {
+          const adjusted = normalizeStartTimeBySport(now, isPadel);
+          if (adjusted <= now) {
+            adjusted.setMinutes(adjusted.getMinutes() + (isPadel ? 30 : 60));
+          }
+          setStartTime(adjusted);
+          return;
+        }
+      }
+
+      setStartTime(nextTime);
+    }
+  };
+
+  const handleConfirmBooking = () => {
+    Alert.alert(
+      'Conferma prenotazione',
+      'Vuoi confermare la tua prenotazione?',
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Si', style: 'default', onPress: () => { void handleCreateBooking(); } },
+      ],
+    );
+  };
+
+  const handleSelectAvailableSlot = (slot: string) => {
+    const [hoursRaw, minutesRaw] = slot.split(':');
+    const hours = Number(hoursRaw);
+    const minutes = Number(minutesRaw);
+
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+      return;
     }
 
-    setPickerTarget(null);
+    const next = new Date(selectedDate);
+    next.setHours(hours, minutes, 0, 0);
+    setStartTime(next);
+  };
+
+  const handleCloseSuccessModal = () => {
+    setSuccessModalVisible(false);
+    navigation.navigate('FieldsList');
+    navigation.getParent()?.navigate('Home');
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Torna ai campi</Text>
-      </TouchableOpacity>
+    <Screen>
+      <ScrollView contentContainerStyle={styles.content}>
+        <BackButton title="Indietro" />
 
-      <View style={styles.header}>
-        <Text style={styles.title}>Prenota campo</Text>
-        <Text style={styles.fieldName}>{fieldName}</Text>
-      </View>
+        <View style={styles.header}>
+          <Text style={styles.title}>Prenota campo</Text>
+          <Text style={styles.fieldName}>{fieldName}</Text>
+          
+        </View>
 
-      <Text style={styles.label}>Inizio</Text>
-      <TouchableOpacity style={styles.timeButton} onPress={() => setPickerTarget('start')}>
-        <Text style={styles.timeButtonText}>{startLabel}</Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.findAvailabilityButton, availabilityLoading && styles.findAvailabilityButtonDisabled]}
+          onPress={() => void handleFindAvailableSlots(fieldId, selectedDate)}
+          disabled={availabilityLoading}
+        >
+          {availabilityLoading
+            ? <ActivityIndicator color="#FFFFFF" />
+            : <Text style={styles.findAvailabilityButtonText}>Trova orari disponibili</Text>
+          }
+        </TouchableOpacity>
+                {availabilityError ? <Text style={sharedStyles.errorText}>{availabilityError}</Text> : null}
 
-      <Text style={styles.label}>Fine</Text>
-      <TouchableOpacity style={styles.timeButton} onPress={() => setPickerTarget('end')}>
-        <Text style={styles.timeButtonText}>{endLabel}</Text>
-      </TouchableOpacity>
+        {availableSlots.length > 0 ? (
+          <View style={styles.availableSlotsCard}>
+            <Text style={styles.availableSlotsTitle}>Orari disponibili</Text>
+            <View style={styles.availableSlotsWrap}>
+              {availableSlots.map((slot) => (
+                <TouchableOpacity
+                  key={slot}
+                  style={[
+                    styles.availableSlotChip,
+                    startLabel === slot && styles.availableSlotChipSelected,
+                  ]}
+                  onPress={() => handleSelectAvailableSlot(slot)}
+                >
+                  <Text
+                    style={[
+                      styles.availableSlotChipText,
+                      startLabel === slot && styles.availableSlotChipTextSelected,
+                    ]}
+                  >
+                    {slot}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
-      {pickerTarget ? (
-        <DateTimePicker
-          value={pickerTarget === 'start' ? startAt : endAt}
-          mode="datetime"
-          is24Hour
-          onChange={handlePickerChange}
-          minimumDate={pickerTarget === 'end' ? startAt : new Date()}
+        <Text style={styles.label}>Data</Text>
+        <TouchableOpacity style={styles.timeButton} onPress={() => setPickerTarget('date')}>
+          <Text style={styles.timeButtonText}>{dateLabel}</Text>
+        </TouchableOpacity>
+
+        {pickerTarget === 'date' ? (
+          <View style={styles.pickerCard}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Seleziona data</Text>
+              <TouchableOpacity onPress={() => setPickerTarget(null)}>
+                <Text style={styles.pickerClose}>Chiudi</Text>
+              </TouchableOpacity>
+            </View>
+
+            <DateTimePicker
+              value={selectedDate}
+              mode="date"
+              display="spinner"
+              onChange={handlePickerChange}
+              minimumDate={new Date()}
+            />
+          </View>
+        ) : null}
+
+        <Text style={styles.label}>Ora inizio</Text>
+        <TouchableOpacity style={styles.timeButton} onPress={() => setPickerTarget('startTime')}>
+          <Text style={styles.timeButtonText}>{startLabel}</Text>
+        </TouchableOpacity>
+
+        {pickerTarget === 'startTime' ? (
+          <View style={styles.pickerCard}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Seleziona ora inizio</Text>
+              <TouchableOpacity onPress={() => setPickerTarget(null)}>
+                <Text style={styles.pickerClose}>Chiudi</Text>
+              </TouchableOpacity>
+            </View>
+
+            <DateTimePicker
+              value={startTime}
+              mode="time"
+              display="spinner"
+              is24Hour
+              minuteInterval={isPadel ? 30 : 60}
+              onChange={handlePickerChange}
+            />
+          </View>
+        ) : null}
+
+        <Text style={styles.label}>Ora fine (calcolata)</Text>
+        <TouchableOpacity style={[styles.timeButton, styles.timeButtonDisabled]} disabled>
+          <Text style={styles.timeButtonText}>{endLabel}</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.label}>Durata</Text>
+        <TouchableOpacity style={[styles.timeButton, styles.timeButtonDisabled]} disabled>
+          <Text style={styles.timeButtonText}>{bookingDurationMinutes} min</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.helperText}>
+          Fascia selezionata: {startLabel} - {endLabel}
+          {isPadel ? ' (slot da 30 minuti, durata 90 min)' : ' (solo ore piene, durata 60 min)'}
+        </Text>
+
+        <Text style={styles.label}>Invita utenti (ID separati da virgola)</Text>
+        <TextInput
+          value={participantUserIdsInput}
+          onChangeText={setParticipantUserIdsInput}
+          placeholder="es. cm123,cm456"
+          autoCapitalize="none"
+          style={sharedStyles.input}
         />
+
+        <TouchableOpacity style={sharedStyles.button} onPress={handleConfirmBooking} disabled={loading}>
+          {loading
+            ? <ActivityIndicator color="#FFFFFF" />
+            : <Text style={sharedStyles.buttonText}>Conferma prenotazione</Text>
+          }
+        </TouchableOpacity>
+
+        {visibleBookingError ? <Text style={sharedStyles.errorText}>{visibleBookingError}</Text> : null}
+
+      </ScrollView>
+
+      {isSuccessModalVisible ? (
+        <View style={styles.successModalBackdrop}>
+          <View style={styles.successModalCard}>
+            <Text style={styles.successIcon}>✓</Text>
+            <Text style={styles.successTitle}>Prenotazione confermata</Text>
+            <Text style={styles.successSubtitle}>La tua prenotazione e stata registrata con successo.</Text>
+            <TouchableOpacity style={styles.successCloseButton} onPress={handleCloseSuccessModal}>
+              <Text style={styles.successCloseButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       ) : null}
-
-      <Text style={styles.label}>Invita utenti (ID separati da virgola)</Text>
-      <TextInput
-        value={participantUserIdsInput}
-        onChangeText={setParticipantUserIdsInput}
-        placeholder="es. cm123,cm456"
-        autoCapitalize="none"
-        style={sharedStyles.input}
-      />
-
-      <TouchableOpacity style={sharedStyles.button} onPress={handleCreateBooking} disabled={loading}>
-        {loading
-          ? <ActivityIndicator color="#FFFFFF" />
-          : <Text style={sharedStyles.buttonText}>Conferma prenotazione</Text>
-        }
-      </TouchableOpacity>
-
-      {bookingError ? <Text style={sharedStyles.errorText}>{bookingError}</Text> : null}
-      {bookingSuccess ? <Text style={sharedStyles.successText}>{bookingSuccess}</Text> : null}
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA',
-    padding: 16,
-  },
-  backButton: {
-    marginBottom: 12,
-  },
-  backText: {
-    color: '#0A84FF',
-    fontSize: 15,
-    fontWeight: '600',
+  content: {
+    paddingBottom: 24,
   },
   header: {
     marginBottom: 20,
@@ -165,13 +375,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#0B1F33',
+    color: '#1E5FAF',
   },
   fieldName: {
     marginTop: 4,
     fontSize: 16,
-    color: '#0A84FF',
+    color: '#2A7DE1',
     fontWeight: '600',
+  },
+  fieldSport: {
+    marginTop: 4,
+    color: '#2E7D32',
+    fontWeight: '700',
+    fontSize: 13,
+    textTransform: 'uppercase',
   },
   label: {
     fontSize: 13,
@@ -189,7 +406,153 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   timeButtonText: {
-    color: '#0B1F33',
+    color: '#1E5FAF',
     fontWeight: '500',
+  },
+  timeButtonDisabled: {
+    backgroundColor: '#F3F6F9',
+  },
+  helperText: {
+    color: '#5C6F82',
+    marginBottom: 12,
+    fontSize: 12,
+  },
+  pickerCard: {
+    borderWidth: 1,
+    borderColor: '#D6DFE6',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    marginBottom: 12,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  pickerTitle: {
+    color: '#1E5FAF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pickerClose: {
+    color: '#2A7DE1',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  findAvailabilityButton: {
+    marginBottom: 10,
+    backgroundColor: '#2E7D32',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  findAvailabilityButtonDisabled: {
+    opacity: 0.7,
+  },
+  findAvailabilityButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  availableSlotsCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D6DFE6',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  availableSlotsTitle: {
+    color: '#1E5FAF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  availableSlotsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  availableSlotChip: {
+    backgroundColor: '#EAF4FF',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#B8D8FF',
+  },
+  availableSlotChipSelected: {
+    backgroundColor: '#2A7DE1',
+    borderColor: '#2A7DE1',
+  },
+  availableSlotChipText: {
+    color: '#1E5FAF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  availableSlotChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  successModalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    zIndex: 30,
+  },
+  successModalCard: {
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#2E7D32',
+    backgroundColor: '#EEF8EE',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+  },
+  successIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    backgroundColor: '#2E7D32',
+    color: '#FFFFFF',
+    fontSize: 30,
+    fontWeight: '800',
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  successTitle: {
+    color: '#2E7D32',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  successSubtitle: {
+    marginTop: 6,
+    color: '#3F5B46',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  successCloseButton: {
+    marginTop: 14,
+    backgroundColor: '#2E7D32',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 26,
+  },
+  successCloseButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });

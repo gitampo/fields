@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL, getApiErrorMessage } from '../lib/api';
-import { ApiErrorBody } from '../types';
+import { ApiErrorBody, UserProfile } from '../types';
 
 const JWT_STORAGE_KEY =
   ((globalThis as { process?: { env?: Record<string, string> } }).process?.env?.EXPO_PUBLIC_JWT_STORAGE_KEY as string | undefined) ||
@@ -9,15 +9,18 @@ const JWT_STORAGE_KEY =
 
 export const useAuth = () => {
   const [token, setToken] = useState('');
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [nameError, setNameError] = useState('');
+  const [usernameError, setUsernameError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [formError, setFormError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
@@ -37,9 +40,41 @@ export const useAuth = () => {
     void restoreToken();
   }, []);
 
+  useEffect(() => {
+    const loadCurrentUser = async () => {
+      if (!token) {
+        setCurrentUser(null);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/auth/me`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          setCurrentUser(null);
+          return;
+        }
+
+        const profile = (await response.json()) as UserProfile;
+        setCurrentUser(profile);
+      } catch {
+        setCurrentUser(null);
+      }
+    };
+
+    void loadCurrentUser();
+  }, [token]);
+
   const clearMessages = () => {
     setNameError('');
     setEmailError('');
+    setUsernameError('');
     setPasswordError('');
     setFormError('');
     setAuthSuccess('');
@@ -56,8 +91,10 @@ export const useAuth = () => {
     setShowPassword(false);
 
     const normalizedEmail = email.trim();
-    if (!normalizedEmail) {
-      setEmailError("Inserisci un'email valida");
+    const normalizedUsername = username.trim();
+
+    if (!normalizedEmail && !normalizedUsername) {
+      setEmailError("Inserisci un'email o username validi");
       return;
     }
     if (!password) {
@@ -70,7 +107,7 @@ export const useAuth = () => {
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password }),
+        body: JSON.stringify({ email: normalizedEmail, username: normalizedUsername, password }),
       });
 
       let data: ApiErrorBody = {};
@@ -98,6 +135,8 @@ export const useAuth = () => {
         setEmailError(message);
       } else if (message.toLowerCase().includes('password')) {
         setPasswordError(message);
+      } else if (message.toLowerCase().includes('username')) {
+        setUsernameError(message);
       } else {
         setFormError(message);
       }
@@ -112,13 +151,15 @@ export const useAuth = () => {
 
     const normalizedName = name.trim();
     const normalizedEmail = email.trim();
+    const normalizedUsername = username.trim();
 
     if (!normalizedName) {
       setNameError('Inserisci il nome');
       return;
     }
-    if (!normalizedEmail) {
-      setEmailError("Inserisci un'email valida");
+    if (!normalizedEmail && !normalizedUsername) {
+      setEmailError("Inserisci un'email o username validi");
+      setUsernameError("Inserisci un'email o username validi");
       return;
     }
     if (!password) {
@@ -131,7 +172,7 @@ export const useAuth = () => {
       const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: normalizedName, email: normalizedEmail, password }),
+        body: JSON.stringify({ name: normalizedName, email: normalizedEmail, username: normalizedUsername, password }),
       });
 
       let data: ApiErrorBody & { token?: string } = {};
@@ -158,6 +199,8 @@ export const useAuth = () => {
         setEmailError(message);
       } else if (message.toLowerCase().includes('password')) {
         setPasswordError(message);
+      } else if (message.toLowerCase().includes('username')) {
+        setUsernameError(message);
       } else {
         setFormError(message);
       }
@@ -174,6 +217,7 @@ export const useAuth = () => {
       await AsyncStorage.removeItem(JWT_STORAGE_KEY);
     } finally {
       setToken('');
+      setCurrentUser(null);
       setAuthMode('login');
     }
   };
@@ -181,6 +225,7 @@ export const useAuth = () => {
   return {
     authReady,
     token,
+    currentUser,
     logout,
     authMode,
     switchAuthMode,
@@ -188,12 +233,15 @@ export const useAuth = () => {
     setName,
     email,
     setEmail,
+    username,
+    setUsername,
     password,
     setPassword,
     showPassword,
     setShowPassword,
     loading,
     emailError,
+    usernameError,
     nameError,
     passwordError,
     formError,

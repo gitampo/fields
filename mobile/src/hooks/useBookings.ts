@@ -11,6 +11,16 @@ const parseParticipantIds = (value: string) => (
   Array.from(new Set(value.split(',').map((item) => item.trim()).filter(Boolean)))
 );
 
+const isOnFullHour = (date: Date) => (
+  date.getMinutes() === 0 && date.getSeconds() === 0 && date.getMilliseconds() === 0
+);
+
+const isOnHalfHourSlot = (date: Date) => (
+  (date.getMinutes() === 0 || date.getMinutes() === 30)
+  && date.getSeconds() === 0
+  && date.getMilliseconds() === 0
+);
+
 export const useBookings = (token: string) => {
   const [myBookings, setMyBookings] = useState<Booking[]>([]);
   const [selectedFieldId, setSelectedFieldId] = useState('');
@@ -21,6 +31,9 @@ export const useBookings = (token: string) => {
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState('');
   const [bookingsError, setBookingsError] = useState('');
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState('');
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
 
   const authHeaders = useMemo(
     () => ({
@@ -113,6 +126,20 @@ export const useBookings = (token: string) => {
       return;
     }
 
+    if (!isOnHalfHourSlot(startDate) || !isOnHalfHourSlot(endDate)) {
+      setBookingError('La prenotazione deve essere su slot da 30 minuti (es. 17:00 o 17:30)');
+      return;
+    }
+
+    const durationMs = endDate.getTime() - startDate.getTime();
+    const oneHourMs = 60 * 60 * 1000;
+    const ninetyMinutesMs = 90 * 60 * 1000;
+
+    if (durationMs !== oneHourMs && durationMs !== ninetyMinutesMs) {
+      setBookingError('La prenotazione deve durare 1 ora o 1 ora e 30 minuti');
+      return;
+    }
+
     try {
       setLoading(true);
       const response = await fetch(`${API_URL}/bookings`, {
@@ -152,7 +179,7 @@ export const useBookings = (token: string) => {
   const handleDeleteBooking = async (bookingId: string) => {
     if (!token) {
       setBookingsError('Devi avere un account per modificare prenotazioni');
-      return;
+      return false;
     }
 
     setBookingsError('');
@@ -175,10 +202,134 @@ export const useBookings = (token: string) => {
       }
 
       await handleLoadMyBookings();
+      return true;
     } catch (error) {
       setBookingsError(error instanceof Error ? error.message : 'Errore inatteso');
+      return false;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLeaveBooking = async (bookingId: string) => {
+    if (!token) {
+      setBookingsError('Devi avere un account per modificare prenotazioni');
+      return false;
+    }
+
+    setBookingsError('');
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/bookings/${bookingId}/leave`, {
+        method: 'POST',
+        headers: authHeaders,
+      });
+
+      let data: unknown = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, (data as ApiErrorBody) || {}));
+      }
+
+      await handleLoadMyBookings();
+      return true;
+    } catch (error) {
+      setBookingsError(error instanceof Error ? error.message : 'Errore inatteso');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddParticipants = async (bookingId: string, participantIdsInput: string) => {
+    if (!token) {
+      setBookingsError('Devi avere un account per modificare prenotazioni');
+      return false;
+    }
+
+    const participantUserIds = parseParticipantIds(participantIdsInput);
+    if (participantUserIds.length === 0) {
+      setBookingsError('Inserisci almeno un partecipante');
+      return false;
+    }
+
+    setBookingsError('');
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/bookings/${bookingId}/participants`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ participantUserIds }),
+      });
+
+      let data: unknown = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, (data as ApiErrorBody) || {}));
+      }
+
+      await handleLoadMyBookings();
+      return true;
+    } catch (error) {
+      setBookingsError(error instanceof Error ? error.message : 'Errore inatteso');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFindAvailableSlots = async (fieldId: string, date: Date) => {
+    if (!token) {
+      setAvailabilityError('Devi avere un account per cercare orari disponibili');
+      return;
+    }
+
+    setAvailabilityError('');
+    setAvailableSlots([]);
+
+    const dateKey = [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-');
+
+    try {
+      setAvailabilityLoading(true);
+      const response = await fetch(`${API_URL}/bookings/availability?fieldId=${encodeURIComponent(fieldId)}&date=${encodeURIComponent(dateKey)}`, {
+        method: 'GET',
+        headers: authHeaders,
+      });
+
+      let data: unknown = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, (data as ApiErrorBody) || {}));
+      }
+
+      const slots = Array.isArray((data as { availableSlots?: unknown[] }).availableSlots)
+        ? ((data as { availableSlots: unknown[] }).availableSlots.filter((item): item is string => typeof item === 'string'))
+        : [];
+
+      setAvailableSlots(slots);
+    } catch (error) {
+      setAvailabilityError(error instanceof Error ? error.message : 'Errore inatteso');
+    } finally {
+      setAvailabilityLoading(false);
     }
   };
 
@@ -196,8 +347,14 @@ export const useBookings = (token: string) => {
     bookingError,
     bookingSuccess,
     bookingsError,
+    availabilityLoading,
+    availabilityError,
+    availableSlots,
     handleLoadMyBookings,
     handleCreateBooking,
     handleDeleteBooking,
+    handleLeaveBooking,
+    handleAddParticipants,
+    handleFindAvailableSlots,
   };
 };

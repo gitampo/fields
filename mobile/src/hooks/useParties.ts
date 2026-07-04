@@ -162,6 +162,37 @@ export const useParties = (token: string) => {
     }
   };
 
+  const handleDeleteParty = async (partyId: string) => {
+    setPartiesError('');
+
+    try {
+      setPartiesLoading(true);
+      const response = await fetch(`${API_URL}/parties/${partyId}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+
+      let data: unknown = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, (data as ApiErrorBody) || {}));
+      }
+
+      await handleLoadParties();
+      return true;
+    } catch (error) {
+      setPartiesError(error instanceof Error ? error.message : 'Errore inatteso');
+      return false;
+    } finally {
+      setPartiesLoading(false);
+    }
+  };
+
   return {
     parties,
     partiesLoading,
@@ -182,5 +213,6 @@ export const useParties = (token: string) => {
     handleLoadParties,
     handleCreateParty,
     handleJoinParty,
+    handleDeleteParty,
   };
 };

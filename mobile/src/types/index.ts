@@ -14,6 +14,15 @@ export type BasicUser = {
   email: string;
 };
 
+export type UserProfile = {
+  id: string;
+  name: string;
+  email: string;
+  username: string;
+  points: number;
+  createdAt: string;
+};
+
 export type BookingParticipant = {
   id: string;
   userId: string;

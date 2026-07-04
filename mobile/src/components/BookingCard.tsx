@@ -40,7 +40,7 @@ const styles = StyleSheet.create({
   fieldName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0B1F33',
+    color: '#1E5FAF',
   },
   fieldMeta: {
     marginTop: 2,

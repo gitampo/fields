@@ -1,141 +1,384 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
+  Alert,
+  Image,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useAuthContext } from '../context/AuthContext';
 import { useFields } from '../hooks/useFields';
 import { useBookings } from '../hooks/useBookings';
-import { FieldCard } from '../components/FieldCard';
-import { BookingCard } from '../components/BookingCard';
+import { useParties } from '../hooks/useParties';
 import { sharedStyles } from '../lib/styles';
+import Screen from '../components/Screen';
+import { PartyCard } from '../components/PartyCard';
+import { Booking, Party } from '../types';
 
-type Props = { token: string };
+const openPartyBanner = require('../assets/fields/sportmanship.jpg');
+const calmPartyBanner = require('../assets/fields/sportmanship.jpg');
+const homePartyFallbackBackground = require('../assets/fields/sportmanship.jpg');
+const padelImage = require('../assets/fields/padel.avif');
+const tennisImage = require('../assets/fields/tennis.avif');
+const calcettoImage = require('../assets/fields/calcetto.avif');
+const bocceImage = require('../assets/fields/bocce.jpg');
 
-export default function HomeScreen({ token }: Props) {
+const OPEN_BANNER_ZOOM = 1.00;
+const OPEN_BANNER_OFFSET_X = 10;
+const OPEN_BANNER_OFFSET_Y = 20;
+const CALM_BANNER_ZOOM = OPEN_BANNER_ZOOM;
+const CALM_BANNER_OFFSET_X = OPEN_BANNER_OFFSET_X;
+const CALM_BANNER_OFFSET_Y = OPEN_BANNER_OFFSET_Y;
+
+
+
+export default function HomeScreen() {
+  const { token, currentUser } = useAuthContext();
+  const navigation = useNavigation<any>();
   const { fields, loading: fieldsLoading, fieldsError, handleLoadFields } = useFields(token);
+  const { myBookings, bookingsError, handleDeleteBooking, handleLoadMyBookings } = useBookings(token);
   const {
-    myBookings,
-    selectedFieldId,
-    setSelectedFieldId,
-    bookingStart,
-    setBookingStart,
-    bookingEnd,
-    setBookingEnd,
-    loading: bookingsLoading,
-    bookingError,
-    bookingSuccess,
-    bookingsError,
-    handleLoadMyBookings,
-    handleCreateBooking,
-  } = useBookings(token);
+    parties,
+    partiesLoading,
+    partiesError,
+    handleLoadParties,
+    handleJoinParty,
+    handleDeleteParty,
+  } = useParties(token);
 
-  const loading = fieldsLoading || bookingsLoading;
+  useFocusEffect(
+    React.useCallback(() => {
+      void handleLoadFields();
+      void handleLoadParties();
+      void handleLoadMyBookings();
+    }, [handleLoadFields, handleLoadParties, handleLoadMyBookings]),
+  );
+
+  const bookingsById = useMemo(() => {
+    const map = new Map<string, Booking>();
+    myBookings.forEach((booking) => {
+      map.set(booking.id, booking);
+    });
+    return map;
+  }, [myBookings]);
+
+  const getPartyBackgroundFromBooking = (party: Party) => {
+    if (!party.bookingId) {
+      return homePartyFallbackBackground;
+    }
+
+    const booking = bookingsById.get(party.bookingId);
+    const key = (booking?.field?.sport || booking?.field?.name || '').toLowerCase();
+
+    if (key.includes('padel')) {
+      return padelImage;
+    }
+    if (key.includes('tennis')) {
+      return tennisImage;
+    }
+    if (key.includes('calcetto') || key.includes('calcio')) {
+      return calcettoImage;
+    }
+    if (key.includes('bocce')) {
+      return bocceImage;
+    }
+
+    return homePartyFallbackBackground;
+  };
+
+  const openParties = useMemo(
+    () => parties.filter((party) => (party.remainingSlots ?? party.maxPlayers) > 0),
+    [parties],
+  );
+
+  const urgentOpenParties = openParties.filter((party) => {
+    const remaining = party.remainingSlots ?? party.maxPlayers;
+    return remaining > 0 && remaining <= 2;
+  });
+  const hasOpenParties = openParties.length > 0;
+
+  const onDeleteParty = (partyId: string) => {
+    Alert.alert('Elimina party', 'Vuoi eliminare questo party?', [
+      { text: 'Annulla', style: 'cancel' },
+      {
+        text: 'Elimina',
+        style: 'destructive',
+        onPress: () => {
+          const partyToDelete = parties.find((party) => party.id === partyId);
+          const linkedBookingId = partyToDelete?.bookingId;
+
+          const runDelete = async () => {
+            const deletedParty = await handleDeleteParty(partyId);
+            if (deletedParty && linkedBookingId) {
+              await handleDeleteBooking(linkedBookingId);
+            }
+          };
+
+          void runDelete();
+        },
+      },
+    ]);
+  };
+
+  const onViewPartyBookingDetails = (bookingId: string) => {
+    navigation.navigate('Prenotazioni', {
+      screen: 'BookingDetails',
+      params: { bookingId },
+      initial: false,
+    });
+  };
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>Campi disponibili</Text>
-      <TouchableOpacity style={sharedStyles.button} onPress={handleLoadFields} disabled={loading}>
-        {fieldsLoading
-          ? <ActivityIndicator color="#FFFFFF" />
-          : <Text style={sharedStyles.buttonText}>Carica campi</Text>
-        }
-      </TouchableOpacity>
-      {fieldsError ? <Text style={sharedStyles.errorText}>{fieldsError}</Text> : null}
+    <Screen>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.heroTextBlock}>
+          <Text style={styles.heroTitle}>Ciao, {currentUser?.name || 'Giocatore'}!</Text>
+          <Text style={styles.heroSubtitle}>Pronto a scendere in campo?</Text>
+        </View>
 
-      <FlatList
-        data={fields}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={<Text style={styles.empty}>Nessun campo trovato</Text>}
-        renderItem={({ item }) => (
-          <FieldCard
-            field={item}
-            isSelected={selectedFieldId === item.id}
-            onPress={setSelectedFieldId}
+       
+        
+        {openParties.slice(0, 4).map((party: Party) => (
+          <PartyCard
+            key={party.id}
+            party={party}
+            backgroundImageSource={getPartyBackgroundFromBooking(party)}
+            onJoin={handleJoinParty}
+            canJoin={Boolean(!currentUser || party.ownerId !== currentUser.id)}
+            canDelete={Boolean(currentUser && party.ownerId === currentUser.id)}
+            onDelete={onDeleteParty}
+            onViewDetails={onViewPartyBookingDetails}
           />
-        )}
-      />
+        ))}
 
-      <Text style={[styles.cardTitle, styles.sectionSpacing]}>Crea prenotazione</Text>
-      <Text style={styles.helperText}>Campo selezionato: {selectedFieldId || 'nessuno'}</Text>
+         <View style={[styles.urgencyCard, !hasOpenParties && styles.urgencyCardCalm]}>
+          <Image
+            source={hasOpenParties ? openPartyBanner : calmPartyBanner}
+            resizeMode="cover"
+            style={[
+              styles.urgencyBackgroundImage,
+              hasOpenParties
+                ? {
+                  transform: [
+                    { scale: OPEN_BANNER_ZOOM },
+                    { translateX: OPEN_BANNER_OFFSET_X },
+                    { translateY: OPEN_BANNER_OFFSET_Y },
+                  ],
+                }
+                : {
+                  transform: [
+                    { scale: CALM_BANNER_ZOOM },
+                    { translateX: CALM_BANNER_OFFSET_X },
+                    { translateY: CALM_BANNER_OFFSET_Y },
+                  ],
+                },
+            ]}
+          />
+          <View style={[styles.urgencyOverlay, !hasOpenParties && styles.urgencyOverlayCalm]}>
+            <View style={styles.urgencyContent}>
+              <Text style={[styles.urgencyLabel, !hasOpenParties && styles.urgencyLabelCalm]}>
+                {hasOpenParties ? 'PARTITE APERTE' : 'NESSUN PARTY'}
+              </Text>
+              <Text style={[styles.urgencyTitle, !hasOpenParties && styles.urgencyTitleCalm]}>
+                {hasOpenParties ? `${openParties.length} party con posti disponibili` : 'Al momento non ci sono party aperti'}
+              </Text>
+              <Text style={[styles.urgencyText, !hasOpenParties && styles.urgencyTextCalm]}>
+                {hasOpenParties
+                  ? (urgentOpenParties.length > 0
+                    ? `${urgentOpenParties.length} party sono quasi pieni: entra ora.`
+                    : 'Ci sono ancora posti liberi: controlla e unisciti quando vuoi.')
+                  : 'Crea un party e invita i tuoi amici a giocare insieme!'}
+              </Text>
+            </View>
 
-      <TextInput
-        value={bookingStart}
-        onChangeText={setBookingStart}
-        placeholder="Start ISO (es. 2026-06-22T18:00:00.000Z)"
-        autoCapitalize="none"
-        style={sharedStyles.input}
-      />
-      <TextInput
-        value={bookingEnd}
-        onChangeText={setBookingEnd}
-        placeholder="End ISO (es. 2026-06-22T19:00:00.000Z)"
-        autoCapitalize="none"
-        style={sharedStyles.input}
-      />
+            <TouchableOpacity
+              style={[styles.urgencyActionButton, !hasOpenParties && styles.urgencyActionButtonCalm]}
+              onPress={() => navigation.navigate('Prenotazioni')}
+            >
+              <Text style={styles.urgencyActionText}>
+                {hasOpenParties ? 'Vedi party aperti' : 'Vai alle prenotazioni'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-      <TouchableOpacity style={sharedStyles.button} onPress={handleCreateBooking} disabled={loading}>
-        <Text style={sharedStyles.buttonText}>Prenota campo</Text>
-      </TouchableOpacity>
-      {bookingError ? <Text style={sharedStyles.errorText}>{bookingError}</Text> : null}
-      {bookingSuccess ? <Text style={sharedStyles.successText}>{bookingSuccess}</Text> : null}
 
-      <TouchableOpacity style={sharedStyles.buttonSecondary} onPress={handleLoadMyBookings} disabled={loading}>
-        {bookingsLoading
-          ? <ActivityIndicator color="#FFFFFF" />
-          : <Text style={sharedStyles.buttonText}>Carica le mie prenotazioni</Text>
-        }
-      </TouchableOpacity>
-      {bookingsError ? <Text style={sharedStyles.errorText}>{bookingsError}</Text> : null}
+        <View style={styles.helpCard}>
+          <Text style={styles.helpTitle}>Centro Assistenza</Text>
+          <Text style={styles.helpText}>Hai bisogno di supporto su prenotazioni o pagamenti?</Text>
+          <Text style={styles.helpText}>Email: support@fieldsapp.it</Text>
+          <Text style={styles.helpText}>Tel: +39 02 1234 5678 (09:00 - 19:00)</Text>
+        </View>
 
-      <FlatList
-        data={myBookings}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={<Text style={styles.empty}>Nessuna prenotazione trovata</Text>}
-        renderItem={({ item }) => <BookingCard booking={item} />}
-      />
-    </View>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoTitle}>Altre info utili</Text>
+          <Text style={styles.infoText}>Campi disponibili oggi: {fields.length}</Text>
+          <Text style={styles.infoText}>Ricorda di arrivare 10 minuti prima dell'orario prenotato.</Text>
+          <Text style={styles.infoText}>Le cancellazioni oltre i limiti previsti possono ridurre i punti.</Text>
+        </View>
+
+        {partiesError ? <Text style={sharedStyles.errorText}>{partiesError}</Text> : null}
+        {bookingsError ? <Text style={sharedStyles.errorText}>{bookingsError}</Text> : null}
+        {fieldsError ? <Text style={sharedStyles.errorText}>{fieldsError}</Text> : null}
+        {fieldsLoading ? <ActivityIndicator color="#2A7DE1" style={styles.bottomLoader} /> : null}
+      </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  content: {
+    paddingTop: 6,
+    paddingBottom: 30,
+  },
+  heroTextBlock: {
+    marginBottom: 8,
+  },
+  heroTitle: {
+    color: '#1E5FAF',
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  heroSubtitle: {
+    marginTop: 4,
+    color: '#355C86',
+    fontSize: 15,
+  },
+  urgencyCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2E7D32',
+    backgroundColor: '#EEF8EE',
+    marginBottom: 14,
+    marginTop: 14,
+    overflow: 'hidden',
+  },
+  urgencyCardCalm: {
+    borderColor: '#B8BDC5',
+    backgroundColor: '#ECEFF3',
+  },
+  urgencyBackgroundImage: {
+    position: 'absolute',
+    width: '140%',
+    height: '140%',
+    left: '-20%',
+    top: '-20%',
+  },
+  urgencyOverlay: {
+    padding: 12,
+    minHeight: 154,
+    backgroundColor: 'rgba(11, 59, 8, 0.67)',
+    justifyContent: 'space-between',
+  },
+  urgencyOverlayCalm: {
+    backgroundColor: 'rgba(69, 78, 92, 0.62)',
+  },
+  urgencyLabel: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#2E7D32',
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginBottom: 12,
+  },
+  urgencyLabelCalm: {
+    backgroundColor: '#8A939E',
+  },
+  urgencyTitle: {
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  urgencyTitleCalm: {
+    color: '#ffffff',
+  },
+  urgencyText: {
+    marginTop: 4,
+    color: '#ffffff',
+    fontSize: 13,
+  },
+  urgencyContent: {
+    flexShrink: 1,
+  },
+  urgencyTextCalm: {
+    color: '#ffffff',
+    marginTop: 10,
+  },
+  urgencyActionButton: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
-    shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 8,
-    elevation: 2,
-    flex: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
-  cardTitle: {
+  urgencyActionButtonCalm: {
+    backgroundColor: '#FFFFFF',
+  },
+  urgencyActionText: {
+    color: '#1E5FAF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sectionTitle: {
+    color: '#1E5FAF',
     fontSize: 18,
-    fontWeight: '600',
-    color: '#0B1F33',
-    marginBottom: 10,
-  },
-  list: {
-    paddingBottom: 20,
+    fontWeight: '700',
+    marginBottom: 6,
+    marginTop: 30,
   },
   empty: {
     textAlign: 'center',
-    color: '#7A8C9E',
-    marginTop: 14,
-  },
-  sectionSpacing: {
-    marginTop: 12,
-  },
-  helperText: {
-    color: '#5C6F82',
+    color: '#29649f',
+    marginTop: 10,
     marginBottom: 8,
+  },
+  helpCard: {
+    marginTop: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D7E2EC',
+    backgroundColor: '#F8FBFF',
+    padding: 14,
+  },
+  helpTitle: {
+    color: '#1E5FAF',
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  helpText: {
+    color: '#29649f',
     fontSize: 13,
+    marginTop: 2,
+  },
+  infoCard: {
+    marginTop: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DDE7F1',
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+  },
+  infoTitle: {
+    color: '#1E5FAF',
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  infoText: {
+    color: '#29649f',
+    fontSize: 13,
+    marginTop: 3,
+  },
+  bottomLoader: {
+    marginTop: 14,
   },
 });

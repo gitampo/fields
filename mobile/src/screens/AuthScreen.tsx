@@ -18,6 +18,8 @@ type Props = {
   setName: (v: string) => void;
   email: string;
   setEmail: (v: string) => void;
+  username: string;
+  setUsername: (v: string) => void;
   password: string;
   setPassword: (v: string) => void;
   showPassword: boolean;
@@ -25,6 +27,7 @@ type Props = {
   loading: boolean;
   emailError: string;
   nameError: string;
+  usernameError: string;
   passwordError: string;
   formError: string;
   authSuccess: string;
@@ -40,6 +43,8 @@ export default function AuthScreen({
   setName,
   email,
   setEmail,
+  username,
+  setUsername,
   password,
   setPassword,
   showPassword,
@@ -47,6 +52,7 @@ export default function AuthScreen({
   loading,
   emailError,
   nameError,
+  usernameError,
   passwordError,
   formError,
   authSuccess,
@@ -87,7 +93,7 @@ export default function AuthScreen({
         <>
           <TextInput
             value={name}
-            onChangeText={(v) => { setName(v); clearMessages(); }}
+            onChangeText={(v: string) => { setName(v); clearMessages(); }}
             placeholder="Nome"
             autoCapitalize="words"
             style={sharedStyles.input}
@@ -96,19 +102,54 @@ export default function AuthScreen({
         </>
       ) : null}
 
-      <TextInput
-        value={email}
-        onChangeText={(v) => { setEmail(v); clearMessages(); }}
-        placeholder="Email"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        style={sharedStyles.input}
-      />
-      {emailError ? <Text style={sharedStyles.errorText}>{emailError}</Text> : null}
+      {authMode === 'login' ? (
+        <>
+          <TextInput
+            value={email || username}
+            onChangeText={(v: string) => {
+              const trimmed = v.trim();
+              if (trimmed.includes('@')) {
+                setEmail(v);
+                setUsername('');
+              } else {
+                setUsername(v);
+                setEmail('');
+              }
+              clearMessages();
+            }}
+            placeholder="Email o Username"
+            autoCapitalize="none"
+            keyboardType="default"
+            style={sharedStyles.input}
+          />
+          {(emailError || usernameError) ? <Text style={sharedStyles.errorText}>{emailError || usernameError}</Text> : null}
+        </>
+      ) : (
+        <>
+          <TextInput
+            value={username}
+            onChangeText={(v: string) => { setUsername(v); clearMessages(); }}
+            placeholder="Username"
+            autoCapitalize="none"
+            style={sharedStyles.input}
+          />
+          {usernameError ? <Text style={sharedStyles.errorText}>{usernameError}</Text> : null}
+
+          <TextInput
+            value={email}
+            onChangeText={(v: string) => { setEmail(v); clearMessages(); }}
+            placeholder="Email"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            style={sharedStyles.input}
+          />
+          {emailError ? <Text style={sharedStyles.errorText}>{emailError}</Text> : null}
+        </>
+      )}
 
       <TextInput
         value={password}
-        onChangeText={(v) => { setPassword(v); clearMessages(); }}
+        onChangeText={(v: string) => { setPassword(v); clearMessages(); }}
         placeholder="Password"
         secureTextEntry={!showPassword}
         style={sharedStyles.input}
@@ -122,7 +163,7 @@ export default function AuthScreen({
         <Ionicons
           name={showPassword ? 'eye-off-outline' : 'eye-outline'}
           size={20}
-          color="#0A84FF"
+          color="#2A7DE1"
         />
       </TouchableOpacity>
       {passwordError ? <Text style={sharedStyles.errorText}>{passwordError}</Text> : null}
@@ -164,7 +205,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 50,
     fontFamily: 'Inter_700Bold',
-    color: '#0B1F33',
+    color: '#1E5FAF',
     textAlign: 'center',
   },
   subtitle: {
@@ -178,7 +219,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#0B1F33',
+    color: '#1E5FAF',
     marginBottom: 10,
   },
   authToggle: {
@@ -196,7 +237,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7FAFD',
   },
   authToggleButtonActive: {
-    borderColor: '#0A84FF',
+    borderColor: '#2A7DE1',
     backgroundColor: '#EAF4FF',
   },
   authToggleLabel: {
@@ -204,7 +245,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   authToggleLabelActive: {
-    color: '#0A84FF',
+    color: '#2A7DE1',
   },
   passwordToggle: {
     alignSelf: 'flex-end',

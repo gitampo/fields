@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { getSocketServer } from '../lib/socket';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
-import { createParty, joinParty, listParties } from '../services/parties.service';
+import { createParty, deleteParty, joinParty, listParties } from '../services/parties.service';
 
 const isValidDate = (value: unknown): value is string => {
   if (typeof value !== 'string') {
@@ -15,6 +15,7 @@ const isValidDate = (value: unknown): value is string => {
 const emitPartiesChanged = () => {
   const io = getSocketServer();
   io?.emit('parties:changed');
+  io?.emit('bookings:changed');
 };
 
 export const listPartiesHandler = async (_req: AuthenticatedRequest, res: Response) => {
@@ -113,6 +114,37 @@ export const joinPartyHandler = async (req: AuthenticatedRequest, res: Response)
 
     emitPartiesChanged();
     return res.status(200).json(result.party);
+  } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const deletePartyHandler = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const partyId = req.params.id;
+  if (!partyId) {
+    return res.status(400).json({ message: 'party id is required' });
+  }
+
+  try {
+    const result = await deleteParty({
+      partyId,
+      userId: req.userId,
+    });
+
+    if (result.error) {
+      return res.status(result.statusCode).json({ message: result.error });
+    }
+
+    emitPartiesChanged();
+    return res.status(200).json({ success: true });
   } catch (error) {
     if (error instanceof Error) {
       return res.status(500).json({ message: error.message });

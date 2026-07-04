@@ -1,68 +1,148 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, ImageSourcePropType, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Party } from '../types';
 
 type Props = {
   party: Party;
+  canDelete?: boolean;
+  canJoin?: boolean;
+  backgroundImageSource?: ImageSourcePropType;
+  onDelete?: (id: string) => void;
+  onViewDetails?: (bookingId: string) => void;
   onJoin: (id: string) => void;
 };
 
-export const PartyCard = ({ party, onJoin }: Props) => {
+const padelImage = require('../assets/fields/padel.avif');
+const tennisImage = require('../assets/fields/tennis.avif');
+const calcettoImage = require('../assets/fields/calcetto.avif');
+const bocceImage = require('../assets/fields/bocce.jpg');
+
+const getPartyImageSource = (party: Party) => {
+  const key = party.title.toLowerCase();
+
+  if (key.includes('padel')) {
+    return padelImage;
+  }
+
+  if (key.includes('tennis')) {
+    return tennisImage;
+  }
+
+  if (key.includes('calcetto') || key.includes('calcio')) {
+    return calcettoImage;
+  }
+
+  if (key.includes('bocce')) {
+    return bocceImage;
+  }
+
+  return padelImage;
+};
+
+export const PartyCard = ({
+  party,
+  canDelete = false,
+  canJoin = true,
+  backgroundImageSource,
+  onDelete,
+  onViewDetails,
+  onJoin,
+}: Props) => {
   const joined = party.joinedCount ?? 1 + (party.members?.length || 0);
   const remaining = party.remainingSlots ?? Math.max(party.maxPlayers - joined, 0);
+  const imageSource = backgroundImageSource ?? getPartyImageSource(party);
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>{party.title}</Text>
-      <Text style={styles.meta}>Visibilita: {party.isPublic ? 'Pubblico' : 'Privato'}</Text>
-      <Text style={styles.meta}>Partecipanti: {joined}/{party.maxPlayers}</Text>
-      <Text style={styles.meta}>Posti liberi: {remaining}</Text>
-      <Text style={styles.meta}>Owner: {party.owner?.name || party.ownerId}</Text>
+      <Image source={imageSource} resizeMode="cover" style={styles.imageBackground} />
+      <View style={styles.overlay}>
+        <Text style={styles.title}>{party.title}</Text>
+        <Text style={styles.meta}>Partecipanti: {joined}/{party.maxPlayers}</Text>
+        <Text style={styles.meta}>Posti liberi: {remaining}</Text>
+        <Text style={styles.meta}>Owner: {party.owner?.name || party.ownerId}</Text>
 
-      <TouchableOpacity
-        style={[styles.joinButton, remaining === 0 && styles.joinButtonDisabled]}
-        disabled={remaining === 0}
-        onPress={() => onJoin(party.id)}
-      >
-        <Text style={styles.joinButtonText}>{remaining === 0 ? 'Party pieno' : 'Unisciti'}</Text>
-      </TouchableOpacity>
+        {canJoin ? (
+          <TouchableOpacity
+            style={[styles.actionButton, remaining === 0 && styles.actionButtonDisabled]}
+            disabled={remaining === 0}
+            onPress={() => onJoin(party.id)}
+          >
+            <Text style={styles.actionButtonText}>{remaining === 0 ? 'Party pieno' : 'Unisciti'}</Text>
+          </TouchableOpacity>
+        ) : null}
+
+
+        {party.bookingId && onViewDetails ? (
+          <TouchableOpacity style={[styles.actionButton, styles.detailsButton]} onPress={() => onViewDetails(party.bookingId as string)}>
+            <Text style={styles.actionButtonText}>Visualizza dettagli</Text>
+          </TouchableOpacity>
+        ) : null}
+
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   card: {
+    borderRadius: 12,
+    marginTop: 12,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E3EAF0',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 8,
-    backgroundColor: '#F8FBFF',
+    borderColor: '#D9E5F2',
+    backgroundColor: '#1E5FAF',
+  },
+  imageBackground: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  overlay: {
+    minHeight: 154,
+    backgroundColor: 'rgba(11, 31, 51, 0.56)',
+    padding: 11,
   },
   title: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0B1F33',
+    color: '#FFFFFF',
+    marginBottom: 7,
   },
   meta: {
-    marginTop: 2,
-    color: '#5C6F82',
+    marginTop: 3,
+    color: '#E6F0FB',
     fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 4,
   },
-  joinButton: {
+  actionButton: {
     marginTop: 10,
-    backgroundColor: '#0A84FF',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    alignSelf: 'flex-start',
+  },
+  actionButtonDisabled: {
+    backgroundColor: '#D3D9E1',
+  },
+  actionButtonText: {
+    color: '#1E5FAF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  deleteButton: {
+    marginTop: 8,
+    backgroundColor: '#D93025',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
     alignSelf: 'flex-start',
   },
-  joinButtonDisabled: {
-    backgroundColor: '#A5B4C2',
-  },
-  joinButtonText: {
+  deleteButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 12,
+  },
+  detailsButton: {
+    marginTop: 8,
   },
 });

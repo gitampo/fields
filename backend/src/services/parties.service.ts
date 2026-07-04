@@ -15,6 +15,11 @@ type JoinPartyInput = {
   userId: string;
 };
 
+type DeletePartyInput = {
+  partyId: string;
+  userId: string;
+};
+
 export const createParty = async (input: CreatePartyInput) => {
   if (input.bookingId) {
     const booking = await prisma.booking.findUnique({
@@ -151,6 +156,36 @@ export const joinParty = async (input: JoinPartyInput) => {
     },
   });
 
+  if (party.bookingId) {
+    await prisma.bookingParticipant.upsert({
+      where: {
+        bookingId_userId: {
+          bookingId: party.bookingId,
+          userId: input.userId,
+        },
+      },
+      update: {},
+      create: {
+        bookingId: party.bookingId,
+        userId: input.userId,
+      },
+    });
+  }
+
+  const updatedMembersCount = await prisma.partyMember.count({
+    where: { partyId: input.partyId },
+  });
+
+  const updatedJoinedCount = 1 + updatedMembersCount;
+  const shouldRemainPublic = updatedJoinedCount < party.maxPlayers;
+
+  await prisma.party.update({
+    where: { id: input.partyId },
+    data: {
+      isPublic: shouldRemainPublic ? party.isPublic : false,
+    },
+  });
+
   const updated = await prisma.party.findUnique({
     where: { id: input.partyId },
     include: {
@@ -183,4 +218,28 @@ export const joinParty = async (input: JoinPartyInput) => {
       remainingSlots: Math.max(updated.maxPlayers - (1 + updated.members.length), 0),
     },
   };
+};
+
+export const deleteParty = async (input: DeletePartyInput) => {
+  const party = await prisma.party.findUnique({
+    where: { id: input.partyId },
+    select: {
+      id: true,
+      ownerId: true,
+    },
+  });
+
+  if (!party) {
+    return { error: 'Party not found', statusCode: 404 as const };
+  }
+
+  if (party.ownerId !== input.userId) {
+    return { error: 'Only party owner can delete this party', statusCode: 403 as const };
+  }
+
+  await prisma.party.delete({
+    where: { id: input.partyId },
+  });
+
+  return { deleted: true };
 };

@@ -239,10 +239,3 @@ cd backend
 npx prisma migrate dev --name init
 ```
 
-## Contatti & Supporto
-
-Per bug, feature request, o domande: apri una issue su GitHub.
-
----
-
-**Buona programmazione!** 🚀

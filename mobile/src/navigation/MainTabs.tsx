@@ -3,12 +3,16 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import FieldsScreen from '../screens/FieldsScreen';
+import HomeScreen from '../screens/HomeScreen';
 import BookingScreen from '../screens/BookingScreen';
-import MyBookingsScreen from '../screens/MyBookingsScreen';
+import BookingDetailsScreen from '../screens/BookingDetailsScreen';
+import MyProfileScreen from '../screens/MyProfile';
+import { theme } from '../theme/theme';
 
 export type FieldsStackParamList = {
   FieldsList: undefined;
-  Booking: { fieldId: string; fieldName: string };
+  Booking: { fieldId: string; fieldName: string; fieldSport: string };
+  BookingDetails: { bookingId: string };
 };
 
 const Tab = createBottomTabNavigator();
@@ -19,27 +23,35 @@ function FieldsStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="FieldsList" component={FieldsScreen} />
       <Stack.Screen name="Booking" component={BookingScreen} />
+      <Stack.Screen name="BookingDetails" component={BookingDetailsScreen} />
     </Stack.Navigator>
   );
 }
+
+
 
 export default function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: '#0A84FF',
-        tabBarInactiveTintColor: '#7A8C9E',
-        tabBarStyle: { backgroundColor: '#FFFFFF' },
+        lazy: false,
+        tabBarActiveTintColor: '#FFFFFF',
+        tabBarInactiveTintColor: '#E6F0FF',
+        tabBarStyle: {
+          backgroundColor: theme.colors.primary,
+          borderTopColor: theme.colors.secondary,
+        },
         tabBarIcon: ({ color, size }) => {
           const iconName =
-            route.name === 'Campi' ? 'key-outline' : 'calendar-outline';
+            route.name === 'Home' ? 'home-outline' : route.name === 'Prenotazioni' ? 'calendar-outline' : 'person-outline';
           return <Ionicons name={iconName as keyof typeof Ionicons.glyphMap} size={size} color={color} />;
         },
       })}
     >
-      <Tab.Screen name="Campi" component={FieldsStack} />
-      <Tab.Screen name="Prenotazioni" component={MyBookingsScreen} />
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Prenotazioni" component={FieldsStack} />
+      <Tab.Screen name="Profilo" component={MyProfileScreen} />
     </Tab.Navigator>
   );
 }

@@ -2,7 +2,6 @@ import React from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,9 +15,11 @@ import { useParties } from '../hooks/useParties';
 import { BookingCard } from '../components/BookingCard';
 import { PartyCard } from '../components/PartyCard';
 import { sharedStyles } from '../lib/styles';
+import Screen from '../components/Screen';
+import { Booking, Party } from '../types';
 
 export default function MyBookingsScreen() {
-  const { token, logout } = useAuthContext();
+  const { token, currentUser, logout } = useAuthContext();
   const {
     myBookings,
     loading,
@@ -47,6 +48,7 @@ export default function MyBookingsScreen() {
     handleLoadParties,
     handleCreateParty,
     handleJoinParty,
+    handleDeleteParty,
   } = useParties(token);
 
   useFocusEffect(
@@ -57,25 +59,25 @@ export default function MyBookingsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <Screen>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <TouchableOpacity style={styles.logoutButton} onPress={() => void logout()}>
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
 
         <Text style={styles.title}>Le mie prenotazioni</Text>
-        <Text style={styles.subtitle}>Aggiornamento automatico attivo (realtime)</Text>
+        
 
-        {loading ? <ActivityIndicator color="#0A84FF" /> : null}
+        {loading ? <ActivityIndicator color="#2A7DE1" /> : null}
         {bookingsError ? <Text style={sharedStyles.errorText}>{bookingsError}</Text> : null}
 
         <FlatList
           data={myBookings}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item: Booking) => item.id}
           scrollEnabled={false}
           contentContainerStyle={styles.list}
           ListEmptyComponent={<Text style={styles.empty}>Nessuna prenotazione trovata</Text>}
-          renderItem={({ item }) => (
+          renderItem={({ item }: { item: Booking }) => (
             <BookingCard
               booking={item}
               canDelete
@@ -142,24 +144,27 @@ export default function MyBookingsScreen() {
         <Text style={styles.sectionTitle}>Party disponibili</Text>
         <FlatList
           data={parties}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item: Party) => item.id}
           scrollEnabled={false}
           contentContainerStyle={styles.list}
           ListEmptyComponent={<Text style={styles.empty}>Nessun party disponibile</Text>}
-          renderItem={({ item }) => <PartyCard party={item} onJoin={handleJoinParty} />}
+          renderItem={({ item }: { item: Party }) => (
+            <PartyCard
+              party={item}
+              onJoin={handleJoinParty}
+              canJoin={Boolean(!currentUser || item.ownerId !== currentUser.id)}
+              canDelete={Boolean(currentUser && item.ownerId === currentUser.id)}
+              onDelete={handleDeleteParty}
+            />
+          )}
         />
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA',
-  },
   scrollContent: {
-    padding: 16,
     paddingBottom: 32,
   },
   logoutButton: {
@@ -171,14 +176,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   logoutText: {
-    color: '#0A84FF',
+    color: '#2A7DE1',
     fontWeight: '700',
     fontSize: 13,
   },
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#0B1F33',
+    color: '#1E5FAF',
     marginBottom: 4,
   },
   subtitle: {
@@ -191,7 +196,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontSize: 18,
     fontWeight: '700',
-    color: '#0B1F33',
+    color: '#1E5FAF',
   },
   list: {
     paddingBottom: 10,
