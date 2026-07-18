@@ -18,6 +18,7 @@ import { sharedStyles } from '../lib/styles';
 import { FieldsStackParamList } from '../navigation/MainTabs';
 import BackButton from '../components/backButton';
 import Screen from '../components/Screen';
+import { getBookingWeatherSummary } from '../lib/weather';
 
 type BookingRouteProp = RouteProp<FieldsStackParamList, 'Booking'>;
 
@@ -28,6 +29,7 @@ export default function BookingScreen() {
   const { fieldId, fieldName, fieldSport } = route.params;
   const [pickerTarget, setPickerTarget] = useState<'date' | 'startTime' | null>(null);
   const [isSuccessModalVisible, setSuccessModalVisible] = useState(false);
+  const [hasSearchedAvailability, setHasSearchedAvailability] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => {
     const next = new Date();
     next.setHours(0, 0, 0, 0);
@@ -215,6 +217,32 @@ export default function BookingScreen() {
     navigation.getParent()?.navigate('Home');
   };
 
+  const handlePressFindAvailableSlots = () => {
+    setHasSearchedAvailability(true);
+    void handleFindAvailableSlots(fieldId, selectedDate);
+  };
+
+  const handleCheckWeather = () => {
+    const run = async () => {
+      try {
+        const summary = await getBookingWeatherSummary(startAt.toISOString(), endAt.toISOString());
+        Alert.alert(
+          `Meteo - ${summary.locationLabel}`,
+          `Inizio\n${summary.startLine}\n\nFine\n${summary.endLine}`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Errore meteo inatteso';
+        Alert.alert('Meteo non disponibile', message);
+      }
+    };
+
+    void run();
+  };
+
+  useEffect(() => {
+    setHasSearchedAvailability(false);
+  }, [fieldId, selectedDate]);
+
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.content}>
@@ -228,7 +256,7 @@ export default function BookingScreen() {
 
         <TouchableOpacity
           style={[styles.findAvailabilityButton, availabilityLoading && styles.findAvailabilityButtonDisabled]}
-          onPress={() => void handleFindAvailableSlots(fieldId, selectedDate)}
+          onPress={handlePressFindAvailableSlots}
           disabled={availabilityLoading}
         >
           {availabilityLoading
@@ -238,30 +266,36 @@ export default function BookingScreen() {
         </TouchableOpacity>
                 {availabilityError ? <Text style={sharedStyles.errorText}>{availabilityError}</Text> : null}
 
-        {availableSlots.length > 0 ? (
+        {hasSearchedAvailability ? (
           <View style={styles.availableSlotsCard}>
             <Text style={styles.availableSlotsTitle}>Orari disponibili</Text>
-            <View style={styles.availableSlotsWrap}>
-              {availableSlots.map((slot) => (
-                <TouchableOpacity
-                  key={slot}
-                  style={[
-                    styles.availableSlotChip,
-                    startLabel === slot && styles.availableSlotChipSelected,
-                  ]}
-                  onPress={() => handleSelectAvailableSlot(slot)}
-                >
-                  <Text
+            {availabilityLoading ? <ActivityIndicator color="#1E5FAF" /> : null}
+            {availableSlots.length > 0 ? (
+              <View style={styles.availableSlotsWrap}>
+                {availableSlots.map((slot) => (
+                  <TouchableOpacity
+                    key={slot}
                     style={[
-                      styles.availableSlotChipText,
-                      startLabel === slot && styles.availableSlotChipTextSelected,
+                      styles.availableSlotChip,
+                      startLabel === slot && styles.availableSlotChipSelected,
                     ]}
+                    onPress={() => handleSelectAvailableSlot(slot)}
                   >
-                    {slot}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <Text
+                      style={[
+                        styles.availableSlotChipText,
+                        startLabel === slot && styles.availableSlotChipTextSelected,
+                      ]}
+                    >
+                      {slot}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+            {!availabilityLoading && availableSlots.length === 0 && !availabilityError ? (
+              <Text style={styles.availableSlotsEmpty}>Nessun orario disponibile per la data selezionata.</Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -329,11 +363,15 @@ export default function BookingScreen() {
           {isPadel ? ' (slot da 30 minuti, durata 90 min)' : ' (solo ore piene, durata 60 min)'}
         </Text>
 
-        <Text style={styles.label}>Invita utenti (ID separati da virgola)</Text>
+        <TouchableOpacity style={styles.weatherButton} onPress={handleCheckWeather}>
+          <Text style={styles.weatherButtonText}>Controlla il Meteo</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.label}>Invita utenti (username, email o ID separati da virgola)</Text>
         <TextInput
           value={participantUserIdsInput}
           onChangeText={setParticipantUserIdsInput}
-          placeholder="es. cm123,cm456"
+          placeholder="es. mario.rossi, anna@email.com"
           autoCapitalize="none"
           style={sharedStyles.input}
         />
@@ -417,6 +455,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontSize: 12,
   },
+  weatherButton: {
+    marginBottom: 12,
+    backgroundColor: '#1E5FAF',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  weatherButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   pickerCard: {
     borderWidth: 1,
     borderColor: '#D6DFE6',
@@ -474,6 +524,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  availableSlotsEmpty: {
+    color: '#5C6F82',
+    fontSize: 13,
   },
   availableSlotChip: {
     backgroundColor: '#EAF4FF',

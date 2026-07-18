@@ -15,5 +15,8 @@
     "test": "npm test --workspaces",
     "lint": "npm run lint --workspaces",
     "format": "npm run format --workspaces"
+  },
+  "dependencies": {
+    "expo-linear-gradient": "~15.0.8"
   }
 }

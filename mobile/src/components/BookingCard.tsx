@@ -4,13 +4,21 @@ import { Booking } from '../types';
 
 type Props = {
   booking: Booking;
+  currentUserId?: string;
   canDelete?: boolean;
   onDelete?: (id: string) => void;
 };
 
-export const BookingCard = ({ booking, canDelete = false, onDelete }: Props) => (
+export const BookingCard = ({ booking, currentUserId, canDelete = false, onDelete }: Props) => {
+  const isJoinedEntry = booking.bookingRole
+    ? booking.bookingRole === 'participant'
+    : Boolean(currentUserId && booking.ownerId !== currentUserId);
+  const fieldName = booking.field?.name || booking.fieldId;
+  const title = isJoinedEntry ? `Ti sei unito a: ${fieldName}` : `Hai prenotato: ${fieldName}`;
+
+  return (
   <View style={styles.bookingCard}>
-    <Text style={styles.fieldName}>{booking.field?.name || booking.fieldId}</Text>
+    <Text style={styles.fieldName}>{title}</Text>
     <Text style={styles.fieldMeta}>{booking.startTime} → {booking.endTime}</Text>
     <Text style={styles.fieldMeta}>Stato: {booking.status}</Text>
     <Text style={styles.fieldMeta}>Owner: {booking.owner?.name || booking.ownerId}</Text>
@@ -26,7 +34,8 @@ export const BookingCard = ({ booking, canDelete = false, onDelete }: Props) => 
       </TouchableOpacity>
     ) : null}
   </View>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   bookingCard: {

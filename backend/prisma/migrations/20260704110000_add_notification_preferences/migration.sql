@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "notifyOnFieldBooked" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "User" ADD COLUMN "notifyOnOpenParty" BOOLEAN NOT NULL DEFAULT true;

@@ -8,6 +8,7 @@ import {
   getUserProfile,
   loginUser,
   registerUser,
+  updateNotificationPreferences,
 } from '../services/auth.service';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 
@@ -101,6 +102,35 @@ export const removeMe = async (req: AuthenticatedRequest, res: Response) => {
 
     return res.status(200).json({ success: true });
   } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const updateMyNotificationPreferences = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { notifyOnFieldBooked, notifyOnOpenParty } = req.body as {
+    notifyOnFieldBooked?: unknown;
+    notifyOnOpenParty?: unknown;
+  };
+
+  try {
+    const preferences = await updateNotificationPreferences(req.userId, {
+      notifyOnFieldBooked: typeof notifyOnFieldBooked === 'boolean' ? notifyOnFieldBooked : undefined,
+      notifyOnOpenParty: typeof notifyOnOpenParty === 'boolean' ? notifyOnOpenParty : undefined,
+    });
+
+    return res.status(200).json(preferences);
+  } catch (error) {
+    if (error instanceof AuthServiceError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     if (error instanceof Error) {
       return res.status(500).json({ message: error.message });
     }

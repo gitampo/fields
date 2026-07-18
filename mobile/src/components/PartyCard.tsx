@@ -1,6 +1,7 @@
 import React from 'react';
 import { Image, ImageSourcePropType, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Party } from '../types';
+import { getFieldImageFocusStyle, getFieldImageSource } from '../lib/fieldImages';
 
 type Props = {
   party: Party;
@@ -10,33 +11,6 @@ type Props = {
   onDelete?: (id: string) => void;
   onViewDetails?: (bookingId: string) => void;
   onJoin: (id: string) => void;
-};
-
-const padelImage = require('../assets/fields/padel.avif');
-const tennisImage = require('../assets/fields/tennis.avif');
-const calcettoImage = require('../assets/fields/calcetto.avif');
-const bocceImage = require('../assets/fields/bocce.jpg');
-
-const getPartyImageSource = (party: Party) => {
-  const key = party.title.toLowerCase();
-
-  if (key.includes('padel')) {
-    return padelImage;
-  }
-
-  if (key.includes('tennis')) {
-    return tennisImage;
-  }
-
-  if (key.includes('calcetto') || key.includes('calcio')) {
-    return calcettoImage;
-  }
-
-  if (key.includes('bocce')) {
-    return bocceImage;
-  }
-
-  return padelImage;
 };
 
 export const PartyCard = ({
@@ -50,11 +24,12 @@ export const PartyCard = ({
 }: Props) => {
   const joined = party.joinedCount ?? 1 + (party.members?.length || 0);
   const remaining = party.remainingSlots ?? Math.max(party.maxPlayers - joined, 0);
-  const imageSource = backgroundImageSource ?? getPartyImageSource(party);
+  const partyImageKey = `${party.title || ''}`;
+  const imageSource = backgroundImageSource ?? getFieldImageSource(partyImageKey);
 
   return (
     <View style={styles.card}>
-      <Image source={imageSource} resizeMode="cover" style={styles.imageBackground} />
+      <Image source={imageSource} resizeMode="cover" style={[styles.imageBackground, getFieldImageFocusStyle(partyImageKey)]} />
       <View style={styles.overlay}>
         <Text style={styles.title}>{party.title}</Text>
         <Text style={styles.meta}>Partecipanti: {joined}/{party.maxPlayers}</Text>

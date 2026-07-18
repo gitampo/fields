@@ -80,7 +80,8 @@ export default function MyBookingsScreen() {
           renderItem={({ item }: { item: Booking }) => (
             <BookingCard
               booking={item}
-              canDelete
+              currentUserId={currentUser?.id}
+              canDelete={Boolean(currentUser && item.ownerId === currentUser.id)}
               onDelete={handleDeleteBooking}
             />
           )}

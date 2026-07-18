@@ -1,13 +1,13 @@
 export const theme = {
   // ─── Colori ──────────────────────────────────────────────────────────────
   colors: {
-    primary:       '#2A7DE1',
+    primary:       '#11449b',
     primaryLight:  '#EAF4FF',
     secondary:     '#2E7D32',
     accent:        '#F57C00',
     background:    '#EAF3FF',
     surface:       '#FFFFFF',
-    text:          '#1E5FAF',
+    text:          '#6f0d0dd2',
     secondaryText: '#5C6F82',
     border:        '#D6DFE6',
     success:       '#2E7D32',

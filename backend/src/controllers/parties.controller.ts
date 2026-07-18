@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { getSocketServer } from '../lib/socket';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
+import { createNotificationsByPreference } from '../services/notifications.service';
 import { createParty, deleteParty, joinParty, listParties } from '../services/parties.service';
 
 const isValidDate = (value: unknown): value is string => {
@@ -18,9 +19,21 @@ const emitPartiesChanged = () => {
   io?.emit('bookings:changed');
 };
 
-export const listPartiesHandler = async (_req: AuthenticatedRequest, res: Response) => {
+const formatDateTime = (date: Date) => date.toLocaleString('it-IT', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+export const listPartiesHandler = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
   try {
-    const parties = await listParties();
+    const parties = await listParties(req.userId);
     return res.status(200).json(parties);
   } catch (error) {
     if (error instanceof Error) {
@@ -79,6 +92,19 @@ export const createPartyHandler = async (req: AuthenticatedRequest, res: Respons
 
     if (result.error) {
       return res.status(result.statusCode).json({ message: result.error });
+    }
+
+    if (result.party?.isPublic) {
+      const message = `Nuova partita aperta: ${result.party.title} (${formatDateTime(result.party.startTime)}).`;
+      try {
+        await createNotificationsByPreference({
+          preference: 'notifyOnOpenParty',
+          message,
+          excludeUserId: req.userId,
+        });
+      } catch (notificationError) {
+        console.error('Failed to create open-party notifications', notificationError);
+      }
     }
 
     emitPartiesChanged();

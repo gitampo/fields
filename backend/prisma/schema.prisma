@@ -11,13 +11,18 @@ datasource db {
 }
 
 
+
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   username  String   @unique
   password  String
   name      String
+  role      String   @default("USER")
   points    Int      @default(0)
+  notifyOnFieldBooked Boolean @default(true)
+  notifyOnOpenParty   Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -66,6 +71,7 @@ model BookingParticipant {
   id        String   @id @default(cuid())
   bookingId String
   userId    String
+  status    String   @default("accepted")
   createdAt DateTime @default(now())
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -148,4 +154,5 @@ model Notification {
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
 

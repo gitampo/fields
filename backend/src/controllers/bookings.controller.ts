@@ -2,12 +2,17 @@ import { Response } from 'express';
 import prisma from '../lib/prisma';
 import { getSocketServer } from '../lib/socket';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
+import { createNotificationsByPreference } from '../services/notifications.service';
 import {
   addBookingParticipants,
   createBooking,
   deleteBooking,
+  getMyBookingsHistory,
+  getMyCompletedBookingStats,
+  getMyPendingInvites,
   getMyBookings,
   leaveBooking,
+  respondToBookingInvite,
 } from '../services/bookings.service';
 
 const isValidDate = (value: unknown): value is string => {
@@ -42,6 +47,14 @@ const emitBookingsChanged = () => {
   io?.emit('bookings:changed');
   io?.emit('parties:changed');
 };
+
+const formatDateTime = (date: Date) => date.toLocaleString('it-IT', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 export const createBookingHandler = async (req: AuthenticatedRequest, res: Response) => {
   const { fieldId, startTime, endTime, participantUserIds } = req.body as {
@@ -108,8 +121,22 @@ export const createBookingHandler = async (req: AuthenticatedRequest, res: Respo
     });
 
     if (result.error) {
-      const isValidationError = result.error.startsWith('User IDs not found');
+      const isValidationError = result.error.startsWith('Users not found');
       return res.status(isValidationError ? 400 : 409).json({ message: result.error });
+    }
+
+    if (result.booking) {
+      const fieldLabel = result.booking.field?.name || 'Un campo';
+      const message = `${fieldLabel} e stato prenotato per ${formatDateTime(result.booking.startTime)}.`;
+      try {
+        await createNotificationsByPreference({
+          preference: 'notifyOnFieldBooked',
+          message,
+          excludeUserId: req.userId,
+        });
+      } catch (notificationError) {
+        console.error('Failed to create booking notifications', notificationError);
+      }
     }
 
     emitBookingsChanged();
@@ -131,6 +158,40 @@ export const getMyBookingsHandler = async (req: AuthenticatedRequest, res: Respo
   try {
     const bookings = await getMyBookings(req.userId);
     return res.status(200).json(bookings);
+  } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const getMyBookingsHistoryHandler = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  try {
+    const bookings = await getMyBookingsHistory(req.userId);
+    return res.status(200).json(bookings);
+  } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const getMyCompletedBookingStatsHandler = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  try {
+    const stats = await getMyCompletedBookingStats(req.userId);
+    return res.status(200).json(stats);
   } catch (error) {
     if (error instanceof Error) {
       return res.status(500).json({ message: error.message });
@@ -311,6 +372,61 @@ export const leaveBookingHandler = async (req: AuthenticatedRequest, res: Respon
 
     emitBookingsChanged();
     return res.status(200).json(result.booking);
+  } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const getMyPendingInvitesHandler = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  try {
+    const invites = await getMyPendingInvites(req.userId);
+    return res.status(200).json(invites);
+  } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const respondToBookingInviteHandler = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const bookingId = req.params.id;
+  const { action } = req.body as { action?: unknown };
+
+  if (!bookingId) {
+    return res.status(400).json({ message: 'Booking id is required' });
+  }
+
+  if (action !== 'accept' && action !== 'reject') {
+    return res.status(400).json({ message: 'action must be accept or reject' });
+  }
+
+  try {
+    const result = await respondToBookingInvite({
+      bookingId,
+      userId: req.userId,
+      action,
+    });
+
+    if (result.error) {
+      return res.status(result.statusCode).json({ message: result.error });
+    }
+
+    emitBookingsChanged();
+    return res.status(200).json({ success: true });
   } catch (error) {
     if (error instanceof Error) {
       return res.status(500).json({ message: error.message });

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -44,6 +44,24 @@ type BadgeDefinition = {
   title: string;
   requirement: string;
 };
+
+type CompletedStatsByField = {
+  fieldId: string;
+  fieldName: string;
+  sport: string;
+  completedBookings: number;
+  completedEntries: number;
+  totalCompletedActivities: number;
+};
+
+type CompletedStats = {
+  totalCompletedActivities: number;
+  totalCompletedBookings: number;
+  totalCompletedEntries: number;
+  byField: CompletedStatsByField[];
+};
+
+const PROFILE_PROGRESS_REFRESH_MS = 30 * 1000;
 
 const BADGES: BadgeDefinition[] = [
   { id: 'starter', title: 'Primo Passo', requirement: 'Completa il profilo giocatore.' },
@@ -135,6 +153,8 @@ export default function MyProfileScreen() {
   const [isPersonalDataModalVisible, setPersonalDataModalVisible] = useState(false);
   const [isPlayerInfoModalVisible, setPlayerInfoModalVisible] = useState(false);
   const [isBadgeModalVisible, setBadgeModalVisible] = useState(false);
+  const [isPointsModalVisible, setPointsModalVisible] = useState(false);
+  const [isNotificationsModalVisible, setNotificationsModalVisible] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
   const [draftSport, setDraftSport] = useState('');
   const [draftDominantSide, setDraftDominantSide] = useState('');
@@ -142,6 +162,46 @@ export default function MyProfileScreen() {
   const [draftLevel, setDraftLevel] = useState('Intermedio');
   const [draftCity, setDraftCity] = useState('Milano');
   const [draftAvailability, setDraftAvailability] = useState('Sera');
+  const [notifyFieldBooked, setNotifyFieldBooked] = useState(true);
+  const [notifyOpenParty, setNotifyOpenParty] = useState(true);
+  const [savingNotifications, setSavingNotifications] = useState(false);
+  const [pointsStats, setPointsStats] = useState<CompletedStats | null>(null);
+  const [pointsStatsLoading, setPointsStatsLoading] = useState(false);
+
+  const loadPointsStats = useCallback(async () => {
+    if (!token) {
+      setPointsStats(null);
+      return;
+    }
+
+    setPointsStatsLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/bookings/me/stats/completed`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      let data: unknown = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, (data as ApiErrorBody) || {}));
+      }
+
+      setPointsStats(data as CompletedStats);
+    } catch {
+      setPointsStats(null);
+    } finally {
+      setPointsStatsLoading(false);
+    }
+  }, [token]);
 
   const loadProfile = useCallback(async () => {
     if (!token) {
@@ -184,7 +244,17 @@ export default function MyProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       void loadProfile();
-    }, [loadProfile]),
+      void loadPointsStats();
+
+      const intervalId = setInterval(() => {
+        void loadProfile();
+        void loadPointsStats();
+      }, PROFILE_PROGRESS_REFRESH_MS);
+
+      return () => {
+        clearInterval(intervalId);
+      };
+    }, [loadPointsStats, loadProfile]),
   );
 
   const handleLogout = useCallback(() => {
@@ -300,6 +370,73 @@ export default function MyProfileScreen() {
     Alert.alert('Profilo giocatore aggiornato', 'Le informazioni giocatore sono state salvate.');
   }, [draftAvailability, draftCity, draftDominantSide, draftLevel, draftRole, draftSport]);
 
+  useEffect(() => {
+    if (!profile) {
+      return;
+    }
+
+    setNotifyFieldBooked(profile.notifyOnFieldBooked);
+    setNotifyOpenParty(profile.notifyOnOpenParty);
+  }, [profile]);
+
+  const handleSaveNotificationPreferences = useCallback(async () => {
+    if (!token) {
+      Alert.alert('Sessione scaduta', 'Effettua di nuovo il login.');
+      return;
+    }
+
+    setSavingNotifications(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/me/notifications`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          notifyOnFieldBooked: notifyFieldBooked,
+          notifyOnOpenParty: notifyOpenParty,
+        }),
+      });
+
+      let data: unknown = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, (data as ApiErrorBody) || {}));
+      }
+
+      setProfile((prev) => {
+        if (!prev) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          notifyOnFieldBooked: notifyFieldBooked,
+          notifyOnOpenParty: notifyOpenParty,
+        };
+      });
+
+      setNotificationsModalVisible(false);
+      Alert.alert('Preferenze salvate', 'Le impostazioni notifiche sono state aggiornate.');
+    } catch (nextError) {
+      Alert.alert('Errore', nextError instanceof Error ? nextError.message : 'Errore inatteso');
+    } finally {
+      setSavingNotifications(false);
+    }
+  }, [notifyFieldBooked, notifyOpenParty, token]);
+
+  const enabledNotifications = [notifyFieldBooked, notifyOpenParty].filter(Boolean).length;
+  const notificationsSummary =
+    enabledNotifications === 0
+      ? 'Nessuna notifica attiva'
+      : `${enabledNotifications} notifiche attive`;
+
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.content}>
@@ -341,6 +478,26 @@ export default function MyProfileScreen() {
             {earnedBadges.length > 0
               ? `${earnedBadges.length} badge ottenuti finora`
               : 'Nessun badge ottenuto: scopri i requisiti'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.panelCard} onPress={() => setPointsModalVisible(true)}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelTitle}>Punti e progressi</Text>
+          </View>
+          <Text style={styles.panelSubtitle}>
+            {pointsStatsLoading
+              ? 'Caricamento riepilogo punti in corso...'
+              : `Punti attuali: ${profile?.points ?? 0}.\nPrenotazioni completate: ${pointsStats?.totalCompletedBookings ?? 0}.\nIngressi completati: ${pointsStats?.totalCompletedEntries ?? 0}.`}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.panelCard} onPress={() => setNotificationsModalVisible(true)}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelTitle}>Notifiche</Text>
+          </View>
+          <Text style={styles.panelSubtitle}>
+            {notificationsSummary}. Scegli quando ricevere aggiornamenti su campi e partite aperte.
           </Text>
         </TouchableOpacity>
 
@@ -552,6 +709,110 @@ export default function MyProfileScreen() {
           </View>
         </View>
       ) : null}
+
+      {isPointsModalVisible ? (
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.badgeModalCard]}>
+            <Text style={styles.modalTitle}>Punti e progressi</Text>
+            <Text style={styles.modalStep}>Riepilogo prenotazioni e ingressi</Text>
+
+            {pointsStatsLoading ? <ActivityIndicator color="#2A7DE1" /> : null}
+
+            <View style={styles.infoCard}>
+              <InfoRow label="Punti attuali" value={String(profile?.points ?? 0)} />
+              <InfoRow label="Prenotazioni completate" value={String(pointsStats?.totalCompletedBookings ?? 0)} />
+              <InfoRow label="Ingressi completati" value={String(pointsStats?.totalCompletedEntries ?? 0)} />
+              <InfoRow label="Attivita totali completate" value={String(pointsStats?.totalCompletedActivities ?? 0)} />
+            </View>
+
+            <ScrollView style={styles.pointsList} showsVerticalScrollIndicator={false}>
+              {(pointsStats?.byField || []).map((item) => (
+                <View key={item.fieldId} style={styles.pointsFieldCard}>
+                  <Text style={styles.pointsFieldTitle}>{item.fieldName} ({item.sport})</Text>
+                  <Text style={styles.pointsFieldMeta}>Prenotazioni: {item.completedBookings}</Text>
+                  <Text style={styles.pointsFieldMeta}>Ingressi: {item.completedEntries}</Text>
+                  <Text style={styles.pointsFieldMeta}>Totale: {item.totalCompletedActivities}</Text>
+                </View>
+              ))}
+
+              {(pointsStats?.byField || []).length === 0 ? (
+                <Text style={styles.badgeEmpty}>Ancora nessuna attivita completata.</Text>
+              ) : null}
+            </ScrollView>
+
+            <TouchableOpacity style={styles.modalPrimaryButtonStandalone} onPress={() => setPointsModalVisible(false)}>
+              <Text style={styles.modalPrimaryButtonText}>Chiudi</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
+      {isNotificationsModalVisible ? (
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Notifiche</Text>
+            <Text style={styles.modalStep}>Gestisci le notifiche che vuoi ricevere</Text>
+
+            <View style={styles.notificationInfoCard}>
+              <Text style={styles.notificationInfoText}>
+                Le notifiche ti aiutano a restare aggiornato su nuove opportunita di gioco. Puoi modificare queste scelte in qualsiasi momento.
+              </Text>
+            </View>
+
+            <View style={styles.notificationRow}>
+              <View style={styles.notificationTextArea}>
+                <Text style={styles.notificationTitle}>Campo prenotato</Text>
+                <Text style={styles.notificationDescription}>
+                  Ricevi un avviso quando un campo che segui viene prenotato.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.toggleTrack, notifyFieldBooked && styles.toggleTrackActive]}
+                onPress={() => setNotifyFieldBooked((prev) => !prev)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.toggleThumb, notifyFieldBooked && styles.toggleThumbActive]} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.notificationRow}>
+              <View style={styles.notificationTextArea}>
+                <Text style={styles.notificationTitle}>Partita aperta</Text>
+                <Text style={styles.notificationDescription}>
+                  Ricevi un avviso quando viene creata una partita aperta vicino a te.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.toggleTrack, notifyOpenParty && styles.toggleTrackActive]}
+                onPress={() => setNotifyOpenParty((prev) => !prev)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.toggleThumb, notifyOpenParty && styles.toggleThumbActive]} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.modalPrimaryButtonStandalone, savingNotifications && styles.modalPrimaryButtonDisabled]}
+              onPress={() => {
+                void handleSaveNotificationPreferences();
+              }}
+              disabled={savingNotifications}
+            >
+              {savingNotifications ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.modalPrimaryButtonText}>Salva preferenze</Text>
+              )}
+            </TouchableOpacity>
+
+              
+            <TouchableOpacity 
+            style={styles.modalSecondaryButton} onPress={() => setNotificationsModalVisible(false)}>
+              <Text style={styles.modalSecondaryButtonText}>Chiudi</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
     </Screen>
   );
 }
@@ -756,7 +1017,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#1E5FAF',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#ffffff',
     paddingVertical: 10,
     alignItems: 'center',
     marginTop: 12,
@@ -858,6 +1119,91 @@ const styles = StyleSheet.create({
     color: '#1E5FAF',
     fontSize: 13,
     fontWeight: '600',
+  },
+  pointsList: {
+    maxHeight: 260,
+    marginTop: 4,
+  },
+  pointsFieldCard: {
+    borderWidth: 1,
+    borderColor: '#E0E8F2',
+    backgroundColor: '#F8FBFF',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+  },
+  pointsFieldTitle: {
+    color: '#1E5FAF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  pointsFieldMeta: {
+    color: '#516173',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  notificationInfoCard: {
+    borderRadius: 12,
+    backgroundColor: '#F5F9FF',
+    borderWidth: 1,
+    borderColor: '#DCE9F7',
+    padding: 12,
+    marginBottom: 14,
+  },
+  notificationInfoText: {
+    color: '#4E6480',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  notificationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E2EAF2',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  notificationTextArea: {
+    flex: 1,
+    marginRight: 12,
+  },
+  notificationTitle: {
+    color: '#1E5FAF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  notificationDescription: {
+    color: '#4E6480',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  toggleTrack: {
+    width: 50,
+    height: 30,
+    borderRadius: 20,
+    backgroundColor: '#CBD5E1',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  toggleTrackActive: {
+    backgroundColor: '#87B6EC',
+  },
+  toggleThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    alignSelf: 'flex-start',
+  },
+  toggleThumbActive: {
+    backgroundColor: '#1E5FAF',
+    alignSelf: 'flex-end',
   },
 });
 

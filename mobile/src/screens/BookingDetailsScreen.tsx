@@ -1,7 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import QRCode from 'react-native-qrcode-svg';
 import BackButton from '../components/backButton';
 import Screen from '../components/Screen';
 import { useAuthContext } from '../context/AuthContext';
@@ -9,9 +22,11 @@ import { useBookings } from '../hooks/useBookings';
 import { sharedStyles } from '../lib/styles';
 import { FieldsStackParamList } from '../navigation/MainTabs';
 import { API_URL } from '../lib/api';
+import { getBookingWeatherSummary } from '../lib/weather';
 
 type BookingDetailsRouteProp = RouteProp<FieldsStackParamList, 'BookingDetails'>;
 type BookingDetailsNavigationProp = StackNavigationProp<FieldsStackParamList, 'BookingDetails'>;
+const QRCodeComponent = QRCode as unknown as React.ComponentType<{ value: string; size?: number }>;
 
 const formatDateTime = (isoDate: string) => {
   const date = new Date(isoDate);
@@ -65,6 +80,25 @@ export default function BookingDetailsScreen() {
   const maxPlayers = booking?.field?.capacity ?? 0;
   const joinedCount = 1 + (booking?.participants?.length || 0);
   const canAddParticipants = Boolean(booking && currentUser && booking.ownerId === currentUser.id && maxPlayers > joinedCount);
+  const isOwnerBooking = Boolean(booking && currentUser && booking.ownerId === currentUser.id);
+  const canDeleteByTime = Boolean(
+    booking && (new Date(booking.startTime).getTime() - Date.now()) > (10 * 60 * 1000),
+  );
+
+  const qrValue = useMemo(() => {
+    if (!booking || !isOwnerBooking) {
+      return '';
+    }
+
+    return JSON.stringify({
+      type: 'booking-owner-pass',
+      bookingId: booking.id,
+      fieldId: booking.fieldId,
+      ownerId: booking.ownerId,
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+    });
+  }, [booking, isOwnerBooking]);
 
   const handleGoHome = useCallback(() => {
     navigation.navigate('FieldsList');
@@ -88,7 +122,7 @@ export default function BookingDetailsScreen() {
   }, [handleGoHome, navigation]);
 
   const handleDelete = () => {
-    if (!booking) {
+    if (!booking || !isOwnerBooking) {
       return;
     }
 
@@ -169,66 +203,124 @@ export default function BookingDetailsScreen() {
     void runShare();
   };
 
+  const handleCheckWeather = () => {
+    if (!booking) {
+      return;
+    }
+
+    const run = async () => {
+      try {
+        const summary = await getBookingWeatherSummary(booking.startTime, booking.endTime);
+        Alert.alert(
+          `Meteo - ${summary.locationLabel}`,
+          `Inizio\n${summary.startLine}\n\nFine\n${summary.endLine}`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Errore meteo inatteso';
+        Alert.alert('Meteo non disponibile', message);
+      }
+    };
+
+    void run();
+  };
+
   return (
     <Screen>
-      <BackButton title="Indietro" onPress={handleGoHome} />
+      <KeyboardAvoidingView
+        style={styles.keyboardWrapper}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <BackButton title="Indietro" onPress={handleGoHome} />
 
-      <Text style={styles.title}>Dettagli prenotazione</Text>
+        <Text style={styles.title}>Dettagli prenotazione</Text>
 
-      {loading && !booking ? <ActivityIndicator color="#2A7DE1" style={styles.loader} /> : null}
-      {bookingsError ? <Text style={sharedStyles.errorText}>{bookingsError}</Text> : null}
+        {loading && !booking ? <ActivityIndicator color="#2A7DE1" style={styles.loader} /> : null}
+        {bookingsError ? <Text style={sharedStyles.errorText}>{bookingsError}</Text> : null}
 
-      {!booking ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>Prenotazione non trovata.</Text>
-        </View>
-      ) : (
-        <View style={styles.card}>
-          <Text style={styles.fieldName}>{booking.field?.name || booking.fieldId}</Text>
-          <Text style={styles.meta}>Inizio: {formatDateTime(booking.startTime)}</Text>
-          <Text style={styles.meta}>Fine: {formatDateTime(booking.endTime)}</Text>
-          <Text style={styles.meta}>Stato: {booking.status}</Text>
-          <Text style={styles.meta}>Owner: {booking.owner?.name || booking.ownerId}</Text>
-          <Text style={styles.meta}>
-            Partecipanti: {booking.participants?.map((p) => p.user?.name || p.userId).join(', ') || 'nessuno'}
-          </Text>
+        {!booking ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>Prenotazione non trovata.</Text>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.fieldName}>{booking.field?.name || booking.fieldId}</Text>
+            <Text style={styles.meta}>Inizio: {formatDateTime(booking.startTime)}</Text>
+            <Text style={styles.meta}>Fine: {formatDateTime(booking.endTime)}</Text>
+            <Text style={styles.meta}>Stato: {booking.status}</Text>
+            <Text style={styles.meta}>Owner: {booking.owner?.name || booking.ownerId}</Text>
+            <Text style={styles.meta}>
+              Partecipanti: {booking.participants?.map((p) => p.user?.name || p.userId).join(', ') || 'nessuno'}
+            </Text>
 
-          <TouchableOpacity style={styles.shareButton} onPress={handleShareBooking}>
-            <Text style={styles.shareButtonText}>Condividi link prenotazione</Text>
-          </TouchableOpacity>
-
-          {canAddParticipants ? (
-            <>
-              <Text style={styles.sectionTitle}>Aggiungi partecipanti</Text>
-              <TextInput
-                value={newParticipantIds}
-                onChangeText={setNewParticipantIds}
-                placeholder="ID utenti separati da virgola"
-                autoCapitalize="none"
-                style={sharedStyles.input}
-              />
-              <TouchableOpacity style={styles.addButton} onPress={handleAddParticipantsPress} disabled={loading}>
-                <Text style={styles.addButtonText}>Aggiungi partecipanti</Text>
-              </TouchableOpacity>
-            </>
-          ) : null}
-
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete} disabled={loading}>
-            <Text style={styles.deleteButtonText}>Elimina prenotazione</Text>
-          </TouchableOpacity>
-
-          {isGuestParticipant ? (
-            <TouchableOpacity style={styles.leaveButton} onPress={handleLeave} disabled={loading}>
-              <Text style={styles.leaveButtonText}>Abbandona prenotazione</Text>
+            <TouchableOpacity style={styles.shareButton} onPress={handleShareBooking}>
+              <Text style={styles.shareButtonText}>Condividi link prenotazione</Text>
             </TouchableOpacity>
-          ) : null}
-        </View>
-      )}
+
+            <TouchableOpacity style={styles.weatherButton} onPress={handleCheckWeather}>
+              <Text style={styles.weatherButtonText}>Controlla il Meteo</Text>
+            </TouchableOpacity>
+
+            {isOwnerBooking ? (
+              <View style={styles.qrCard}>
+                <Text style={styles.qrTitle}>QR prenotazione (solo owner)</Text>
+                {qrValue ? (
+                  <View style={styles.qrCodeWrap}>
+                    <QRCodeComponent value={qrValue} size={180} />
+                  </View>
+                ) : null}
+                <Text style={styles.qrHint}>Mostra questo QR all'ingresso del campo.</Text>
+              </View>
+            ) : null}
+
+            {canAddParticipants ? (
+              <>
+                <Text style={styles.sectionTitle}>Aggiungi partecipanti</Text>
+                <TextInput
+                  value={newParticipantIds}
+                  onChangeText={setNewParticipantIds}
+                  placeholder="Username, email o ID separati da virgola"
+                  autoCapitalize="none"
+                  style={sharedStyles.input}
+                />
+                <TouchableOpacity style={styles.addButton} onPress={handleAddParticipantsPress} disabled={loading}>
+                  <Text style={styles.addButtonText}>Aggiungi partecipanti</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+
+            {isOwnerBooking && canDeleteByTime ? (
+              <TouchableOpacity style={styles.deleteButton} onPress={handleDelete} disabled={loading}>
+                <Text style={styles.deleteButtonText}>Elimina prenotazione</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {isGuestParticipant ? (
+              <TouchableOpacity style={styles.leaveButton} onPress={handleLeave} disabled={loading}>
+                <Text style={styles.leaveButtonText}>Abbandona prenotazione</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardWrapper: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
+  },
   title: {
     marginTop: 14,
     marginBottom: 10,
@@ -312,6 +404,45 @@ const styles = StyleSheet.create({
   shareButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  weatherButton: {
+    marginTop: 10,
+    backgroundColor: '#1E5FAF',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  weatherButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    textAlign: 'left',
+  },
+  qrCard: {
+    marginTop: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DCE7F3',
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+  },
+  qrTitle: {
+    color: '#1E5FAF',
+    fontWeight: '700',
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  qrCodeWrap: {
+    backgroundColor: '#FFFFFF',
+    padding: 8,
+    borderRadius: 8,
+  },
+  qrHint: {
+    marginTop: 10,
+    color: '#5C6F82',
+    fontSize: 12,
+    textAlign: 'center',
   },
   emptyCard: {
     marginTop: 12,

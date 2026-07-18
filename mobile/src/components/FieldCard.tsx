@@ -1,66 +1,12 @@
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Field } from '../types';
+import { getFieldImageFocusStyle, getFieldImageSource } from '../lib/fieldImages';
 
 type Props = {
   field: Field;
   isSelected: boolean;
   onPress: (id: string) => void;
-};
-
-const padelImage = require('../assets/fields/padel.avif');
-const tennisImage = require('../assets/fields/tennis.avif');
-const calcettoImage = require('../assets/fields/calcetto.avif');
-const bocceImage = require('../assets/fields/bocce.jpg');
-
-const getFieldImageUrl = (field: Field) => {
-  const key = field.sport?.toLowerCase() || '';
-
-  if (key.includes('basket')) {
-    return 'https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=1200&q=80';
-  }
-
-  return 'https://images.unsplash.com/photo-1526232761682-d26e03ac148e?auto=format&fit=crop&w=1200&q=80';
-};
-
-const getFieldImageBackgroundSource = (field: Field) => {
-  const key = field.sport?.toLowerCase() || '';
-  if (key.includes('padel')) {
-    return padelImage;
-  }
-
-  if (key.includes('tennis')) {
-    return tennisImage;
-  }
-
-  if (key.includes('calcetto') || key.includes('calcio')) {
-    return calcettoImage;
-  }
-
-  if (key.includes('bocce')) {
-    return bocceImage;
-  }
-
-  return { uri: getFieldImageUrl(field) };
-};
-
-const getFieldImageFocusStyle = (field: Field) => {
-  const key = field.sport?.toLowerCase() || '';
-
-  if (key.includes('bocce')) {
-    // Valori regolabili: X negativo mostra piu parte destra dell'immagine.
-    return { transform: [{ scale: 1.22 }, { translateX: -36 }, { translateY: -380 }] };
-  }
-
-  if (key.includes('calcetto') || key.includes('calcio')) {
-    return { transform: [{ scale: 1.1 }, { translateX: -8 }] };
-  }
-
-  if (key.includes('sportmanship')) {
-    return { transform: [{ scale: 1.00 }, { translateX: 0 }] };
-  }
-
-  return { transform: [{ scale: 1.06 }, { translateX: 0 }] };
 };
 
 export const FieldCard = ({ field, isSelected, onPress }: Props) => (
@@ -69,9 +15,9 @@ export const FieldCard = ({ field, isSelected, onPress }: Props) => (
     onPress={() => onPress(field.id)}
   >
     <Image
-      source={getFieldImageBackgroundSource(field)}
+      source={getFieldImageSource(`${field.sport || ''} ${field.name || ''}`)}
       resizeMode="cover"
-      style={[styles.imageBackground, getFieldImageFocusStyle(field)]}
+      style={[styles.imageBackground, getFieldImageFocusStyle(`${field.sport || ''} ${field.name || ''}`)]}
     />
     <View style={styles.overlay}>
       <Text style={styles.fieldName}>{field.name}</Text>
@@ -96,11 +42,6 @@ const styles = StyleSheet.create({
   },
   imageBackground: {
     ...StyleSheet.absoluteFillObject,
-    transform: [
-      { scale: 1.00 },     // zoom
-      { translateX: -300 }, // sinistra/destra (negativo = mostra più a destra)
-      { translateY: -10 }, // su/giu (negativo = mostra più in basso)
-    ],
   },
   overlay: {
     minHeight: 180,

@@ -22,6 +22,7 @@ import { Field } from '../types';
 
 type NavigationProp = StackNavigationProp<FieldsStackParamList, 'FieldsList'>;
 type SortValue = 'name' | 'priceAsc' | 'priceDesc' | 'playersAsc' | 'playersDesc';
+type HistoryFilter = 'all' | 'active' | 'ended';
 
 const sortOptions: Array<{ label: string; value: SortValue }> = [
   { label: 'Nome', value: 'name' },
@@ -42,7 +43,8 @@ export default function FieldsScreen() {
   } = useBookings(token);
   const [sortBy, setSortBy] = useState<SortValue>('name');
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
-  const [showMyBookings, setShowMyBookings] = useState(false);
+  const [showBookingHistory, setShowBookingHistory] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
 
   useFocusEffect(
     useCallback(() => {
@@ -54,8 +56,44 @@ export default function FieldsScreen() {
   const homeBookings = useMemo(() => (
     myBookings
       .slice()
-      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+      .sort((a, b) => {
+        const aCreatedAt = new Date(a.createdAt || a.startTime).getTime();
+        const bCreatedAt = new Date(b.createdAt || b.startTime).getTime();
+        return bCreatedAt - aCreatedAt;
+      })
   ), [myBookings]);
+
+  const filteredHistoryBookings = useMemo(() => {
+    const now = new Date();
+
+    if (historyFilter === 'active') {
+      return homeBookings.filter((booking) => {
+        const bookingEnd = new Date(booking.endTime);
+        return bookingEnd.getTime() > now.getTime();
+      });
+    }
+
+    if (historyFilter === 'ended') {
+      return homeBookings.filter((booking) => {
+        const bookingEnd = new Date(booking.endTime);
+        return bookingEnd.getTime() <= now.getTime();
+      });
+    }
+
+    return homeBookings;
+  }, [historyFilter, homeBookings]);
+
+  const historyEmptyText = useMemo(() => {
+    if (historyFilter === 'active') {
+      return 'Non hai prenotazioni attive.';
+    }
+
+    if (historyFilter === 'ended') {
+      return 'Non hai prenotazioni terminate.';
+    }
+
+    return 'Non hai ancora prenotazioni effettuate.';
+  }, [historyFilter]);
 
   const filteredFields = useMemo(() => {
     const next = fields.slice();
@@ -91,17 +129,41 @@ export default function FieldsScreen() {
 
       <TouchableOpacity
         style={styles.bookingsToggleButton}
-        onPress={() => setShowMyBookings((current) => !current)}
+        onPress={() => setShowBookingHistory((current) => !current)}
       >
         <Text style={styles.bookingsToggleText}>
-          {showMyBookings ? 'Nascondi prenotazioni' : 'Mostra le mie prenotazioni'}
+          {showBookingHistory ? 'Nascondi storico prenotazioni' : 'Storico prenotazioni'}
         </Text>
       </TouchableOpacity>
 
-      {showMyBookings ? (
+      {showBookingHistory ? (
         <View style={styles.myBookingsSection}>
-          <Text style={styles.bookingsTitle}>Le mie prenotazioni</Text>
-          {homeBookings.length > 0 ? homeBookings.map((booking) => {
+          <Text style={styles.bookingsTitle}>Storico prenotazioni</Text>
+
+          <View style={styles.historyFiltersRow}>
+            <TouchableOpacity
+              style={[styles.historyFilterButton, historyFilter === 'all' && styles.historyFilterButtonActive]}
+              onPress={() => setHistoryFilter('all')}
+            >
+              <Text style={[styles.historyFilterText, historyFilter === 'all' && styles.historyFilterTextActive]}>Tutte</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.historyFilterButton, historyFilter === 'active' && styles.historyFilterButtonActive]}
+              onPress={() => setHistoryFilter('active')}
+            >
+              <Text style={[styles.historyFilterText, historyFilter === 'active' && styles.historyFilterTextActive]}>Attive</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.historyFilterButton, historyFilter === 'ended' && styles.historyFilterButtonActive]}
+              onPress={() => setHistoryFilter('ended')}
+            >
+              <Text style={[styles.historyFilterText, historyFilter === 'ended' && styles.historyFilterTextActive]}>Terminate</Text>
+            </TouchableOpacity>
+          </View>
+
+          {filteredHistoryBookings.length > 0 ? filteredHistoryBookings.map((booking) => {
+            const isIngresso = booking.bookingRole === 'participant';
+            const bookingTypeLabel = isIngresso ? 'INGRESSO' : 'PRENOTAZIONE';
             const start = new Date(booking.startTime).toLocaleString('it-IT', {
               day: '2-digit',
               month: '2-digit',
@@ -109,8 +171,6 @@ export default function FieldsScreen() {
               minute: '2-digit',
             });
             const end = new Date(booking.endTime).toLocaleString('it-IT', {
-              day: '2-digit',
-              month: '2-digit',
               hour: '2-digit',
               minute: '2-digit',
             });
@@ -118,16 +178,25 @@ export default function FieldsScreen() {
             return (
               <TouchableOpacity
                 key={booking.id}
-                style={styles.featuredBookingCard}
+                style={[
+                  styles.featuredBookingCard,
+                  isIngresso ? styles.featuredBookingCardIngresso : styles.featuredBookingCardPrenotazione,
+                ]}
                 onPress={() => navigation.navigate('BookingDetails', { bookingId: booking.id })}
               >
-                <Text style={styles.featuredBadge}>LA TUA PRENOTAZIONE</Text>
-                <Text style={styles.featuredTitle}>{booking.field?.name || booking.fieldId}</Text>
-                <Text style={styles.featuredMeta}>{start} - {end}</Text>
-                <Text style={styles.featuredTapHint}>Tocca per dettagli e azioni</Text>
+                <Text style={[styles.featuredBadge, isIngresso ? styles.featuredBadgeIngresso : styles.featuredBadgePrenotazione]}>
+                  {bookingTypeLabel}
+                </Text>
+                <Text style={[styles.featuredTitle, isIngresso ? styles.featuredTitleIngresso : styles.featuredTitlePrenotazione]}>
+                  {booking.field?.name || booking.fieldId}
+                </Text>
+                <Text style={[styles.featuredMeta, isIngresso ? styles.featuredMetaIngresso : styles.featuredMetaPrenotazione]}>{start} - {end}</Text>
+                <Text style={[styles.featuredTapHint, isIngresso ? styles.featuredTapHintIngresso : styles.featuredTapHintPrenotazione]}>
+                  Tocca per dettagli e azioni
+                </Text>
               </TouchableOpacity>
             );
-          }) : <Text style={styles.emptyBookings}>Non hai ancora prenotazioni effettuate.</Text>}
+          }) : <Text style={styles.emptyBookings}>{historyEmptyText}</Text>}
         </View>
       ) : null}
 
@@ -258,41 +327,92 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
+  historyFiltersRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+    gap: 8,
+  },
+  historyFilterButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B8D8FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  historyFilterButtonActive: {
+    backgroundColor: '#2A7DE1',
+    borderColor: '#2A7DE1',
+  },
+  historyFilterText: {
+    color: '#1E5FAF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  historyFilterTextActive: {
+    color: '#FFFFFF',
+  },
   featuredBookingCard: {
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
-    backgroundColor: '#EAF4FF',
     borderWidth: 1,
+  },
+  featuredBookingCardPrenotazione: {
+    backgroundColor: '#EAF4FF',
     borderColor: '#B8D8FF',
+  },
+  featuredBookingCardIngresso: {
+    backgroundColor: '#F2FBF8',
+    borderColor: '#9BDDC5',
   },
   featuredBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: '#2A7DE1',
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 11,
     marginBottom: 8,
   },
+  featuredBadgePrenotazione: {
+    backgroundColor: '#2A7DE1',
+  },
+  featuredBadgeIngresso: {
+    backgroundColor: '#1B9E77',
+  },
   featuredTitle: {
-    color: '#1E5FAF',
     fontWeight: '700',
     fontSize: 16,
   },
+  featuredTitlePrenotazione: {
+    color: '#1E5FAF',
+  },
+  featuredTitleIngresso: {
+    color: '#177A5B',
+  },
   featuredMeta: {
     marginTop: 3,
-    color: '#334E68',
     fontSize: 13,
     fontWeight: '600',
   },
+  featuredMetaPrenotazione: {
+    color: '#334E68',
+  },
+  featuredMetaIngresso: {
+    color: '#2F5F50',
+  },
   featuredTapHint: {
     marginTop: 8,
-    color: '#2A7DE1',
     fontSize: 12,
     fontWeight: '600',
+  },
+  featuredTapHintPrenotazione: {
+    color: '#2A7DE1',
+  },
+  featuredTapHintIngresso: {
+    color: '#1B9E77',
   },
   emptyBookings: {
     color: '#7A8C9E',

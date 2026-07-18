@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { API_URL, getApiErrorMessage } from '../lib/api';
-import { ApiErrorBody, Booking } from '../types';
+import { ApiErrorBody, Booking, BookingInvite } from '../types';
 
 const SOCKET_URL =
   ((globalThis as { process?: { env?: Record<string, string> } }).process?.env?.EXPO_PUBLIC_SOCKET_URL as string | undefined) ||
@@ -23,6 +23,7 @@ const isOnHalfHourSlot = (date: Date) => (
 
 export const useBookings = (token: string) => {
   const [myBookings, setMyBookings] = useState<Booking[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<BookingInvite[]>([]);
   const [selectedFieldId, setSelectedFieldId] = useState('');
   const [bookingStart, setBookingStart] = useState('');
   const [bookingEnd, setBookingEnd] = useState('');
@@ -34,6 +35,7 @@ export const useBookings = (token: string) => {
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
 
   const authHeaders = useMemo(
     () => ({
@@ -76,6 +78,38 @@ export const useBookings = (token: string) => {
     }
   }, [authHeaders, token]);
 
+  const handleLoadPendingInvites = useCallback(async () => {
+    if (!token) {
+      setPendingInvites([]);
+      return;
+    }
+
+    try {
+      setInvitesLoading(true);
+      const response = await fetch(`${API_URL}/bookings/invites/pending`, {
+        method: 'GET',
+        headers: authHeaders,
+      });
+
+      let data: unknown = [];
+      try {
+        data = await response.json();
+      } catch {
+        data = [];
+      }
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, (data as ApiErrorBody) || {}));
+      }
+
+      setPendingInvites(Array.isArray(data) ? (data as BookingInvite[]) : []);
+    } catch (error) {
+      setBookingsError(error instanceof Error ? error.message : 'Errore inatteso');
+    } finally {
+      setInvitesLoading(false);
+    }
+  }, [authHeaders, token]);
+
   useEffect(() => {
     if (!token) {
       return;
@@ -87,6 +121,7 @@ export const useBookings = (token: string) => {
 
     const onBookingsChanged = () => {
       void handleLoadMyBookings();
+      void handleLoadPendingInvites();
     };
 
     socket.on('bookings:changed', onBookingsChanged);
@@ -95,7 +130,43 @@ export const useBookings = (token: string) => {
       socket.off('bookings:changed', onBookingsChanged);
       socket.disconnect();
     };
-  }, [handleLoadMyBookings, token]);
+  }, [handleLoadMyBookings, handleLoadPendingInvites, token]);
+
+  const handleRespondToInvite = async (bookingId: string, action: 'accept' | 'reject') => {
+    if (!token) {
+      setBookingsError('Devi avere un account per rispondere agli inviti');
+      return false;
+    }
+
+    setBookingsError('');
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/bookings/${bookingId}/invites/respond`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ action }),
+      });
+
+      let data: unknown = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response.status, (data as ApiErrorBody) || {}));
+      }
+
+      await Promise.all([handleLoadMyBookings(), handleLoadPendingInvites()]);
+      return true;
+    } catch (error) {
+      setBookingsError(error instanceof Error ? error.message : 'Errore inatteso');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreateBooking = async () => {
     setBookingError('');
@@ -295,7 +366,6 @@ export const useBookings = (token: string) => {
     }
 
     setAvailabilityError('');
-    setAvailableSlots([]);
 
     const dateKey = [
       date.getFullYear(),
@@ -335,6 +405,7 @@ export const useBookings = (token: string) => {
 
   return {
     myBookings,
+    pendingInvites,
     selectedFieldId,
     setSelectedFieldId,
     bookingStart,
@@ -350,11 +421,14 @@ export const useBookings = (token: string) => {
     availabilityLoading,
     availabilityError,
     availableSlots,
+    invitesLoading,
     handleLoadMyBookings,
+    handleLoadPendingInvites,
     handleCreateBooking,
     handleDeleteBooking,
     handleLeaveBooking,
     handleAddParticipants,
     handleFindAvailableSlots,
+    handleRespondToInvite,
   };
 };
