@@ -111,7 +111,7 @@ fields/
 
 ```
 
-## Funcionalità Principali
+## Funzionalità Principali
 
 ### Per gli Utenti
 
